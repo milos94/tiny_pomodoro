@@ -4,7 +4,13 @@ A minimal pomodoro timer application built with a focus on **executable size opt
 
 ## Purpose
 
-This project demonstrates size optimization techniques for compiled C++ applications. The goal is to build the smallest possible functional pomodoro timer while maintaining clean, readable code. This is a personal project created as a reference implementation for a technical talk on binary size reduction strategies.
+This project is a functional pomodoro timer application that demonstrates size optimization techniques for compiled C++ applications. It's designed as a reference implementation for a technical talk on binary size reduction strategies.
+
+**Default Configuration:**
+- Focus Time: 25 minutes
+- Short Break: 5 minutes
+- Long Break: 15 minutes
+- Rounds Until Long Break: 4
 
 ## Tech Stack
 
@@ -21,6 +27,7 @@ This project demonstrates size optimization techniques for compiled C++ applicat
 - libc++ development libraries
 - CMake 3.20 or newer
 - NAppGUI development libraries installed
+- GTK3 and GDK Pixbuf libraries (for Linux GUI support)
 
 ### Build Instructions
 

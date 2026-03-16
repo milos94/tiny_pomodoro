@@ -12,62 +12,89 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile commands for clangd and clang-tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find nappgui dependency
-find_package(nappgui REQUIRED)
+# Find FLTK (used by the FLTK build only)
+find_package(FLTK REQUIRED)
 
-# Create executable
-add_executable(tiny_pomodoro
-    src/main.cpp
+# Create two executables: one using FLTK, one using only raw/native APIs
+add_executable(tiny_pomodoro_fltk
+    src/main_fltk.cpp
 )
 
-# Link nappgui - use the gui target as the main entry point
-target_link_libraries(tiny_pomodoro PRIVATE nappgui::gui)
+target_link_libraries(tiny_pomodoro_fltk PRIVATE
+    fltk
+    X11 Xext Xinerama Xcursor Xrender Xfixes fontconfig
+    pangocairo-1.0 pango-1.0 gobject-2.0 glib-2.0 harfbuzz
+    cairo gtk-3 gdk-3 atk-1.0 cairo-gobject gdk_pixbuf-2.0 gio-2.0
+    wayland-cursor wayland-client xkbcommon dbus-1
+    z m pthread dl
+)
 
-# Add nappgui include directories (from the find_package)
-target_include_directories(tiny_pomodoro PRIVATE ${NAPPGUI_INCLUDE_PATH})
+# Minimal/raw build (no FLTK)
+add_executable(tiny_pomodoro_raw
+    src/main_raw.cpp
+)
+
+target_link_libraries(tiny_pomodoro_raw PRIVATE
+    X11 Xext Xinerama Xcursor Xrender Xfixes fontconfig
+    z m pthread dl
+)
 
 # Build type configurations
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Helper: list of pomodoro targets to apply common flags to
+set(POMODORO_TARGETS tiny_pomodoro_fltk tiny_pomodoro_raw)
+
 # Release build
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(tiny_pomodoro PRIVATE -O3)
+    foreach(tgt ${POMODORO_TARGETS})
+        target_compile_options(${tgt} PRIVATE -O3)
+    endforeach()
 endif()
 
 # Debug build
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(tiny_pomodoro PRIVATE -g -O0)
+    foreach(tgt ${POMODORO_TARGETS})
+        target_compile_options(${tgt} PRIVATE -g -O0)
+    endforeach()
 endif()
 
 # Debug with Address Sanitizer
 if(CMAKE_BUILD_TYPE STREQUAL "DebugASAN")
-    target_compile_options(tiny_pomodoro PRIVATE -g -O0 -fsanitize=address -fno-omit-frame-pointer)
-    target_link_options(tiny_pomodoro PRIVATE -fsanitize=address)
+    foreach(tgt ${POMODORO_TARGETS})
+        target_compile_options(${tgt} PRIVATE -g -O0 -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(${tgt} PRIVATE -fsanitize=address)
+    endforeach()
 endif()
 
 # Debug with Undefined Behavior Sanitizer
 if(CMAKE_BUILD_TYPE STREQUAL "DebugUBSAN")
-    target_compile_options(tiny_pomodoro PRIVATE -g -O0 -fsanitize=undefined -fno-omit-frame-pointer)
-    target_link_options(tiny_pomodoro PRIVATE -fsanitize=undefined)
+    foreach(tgt ${POMODORO_TARGETS})
+        target_compile_options(${tgt} PRIVATE -g -O0 -fsanitize=undefined -fno-omit-frame-pointer)
+        target_link_options(${tgt} PRIVATE -fsanitize=undefined)
+    endforeach()
 endif()
 
 # Tiny build - minimal executable size
 if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
-    target_compile_options(tiny_pomodoro PRIVATE -Oz -ffunction-sections -fdata-sections -fno-rtti -fno-exceptions)
-    target_link_options(tiny_pomodoro PRIVATE -Wl,--gc-sections -Wl,-s)
+    foreach(tgt ${POMODORO_TARGETS})
+        target_compile_options(${tgt} PRIVATE -Oz -ffunction-sections -fdata-sections -fno-rtti -fno-exceptions)
+        target_link_options(${tgt} PRIVATE -Wl,--gc-sections -Wl,-s)
+    endforeach()
 endif()
 
 # Common flags for all builds
-target_compile_options(tiny_pomodoro PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-    -Wconversion
-    -stdlib=libc++
-)
+foreach(tgt ${POMODORO_TARGETS})
+    target_compile_options(${tgt} PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -stdlib=libc++
+    )
 
-# we need to also tell the linker to use the libc++
-target_link_options(tiny_pomodoro PRIVATE 
-    -lc++)
+    # we need to also tell the linker to use the libc++
+    target_link_options(${tgt} PRIVATE -lc++)
+endforeach()
