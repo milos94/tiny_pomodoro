@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++-20")
 
-project(tiny_pomodoro CXX)
+project(tiny_pomodoro CXX ASM)
+
+enable_language(ASM_NASM)
+set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
 
 # C++ Standard and libc++
 set(CMAKE_CXX_STANDARD 23)
@@ -34,9 +37,35 @@ add_executable(tiny_pomodoro_raw
     src/main_raw.cpp
 )
 
-target_link_libraries(tiny_pomodoro_raw PRIVATE
-    X11 Xext Xinerama Xcursor Xrender Xfixes fontconfig
-    z m pthread dl
+add_executable(tiny_pomodoro_raw_plus
+    src/main_raw_plus.cpp
+)
+
+add_executable(tiny_pomodoro_raw_plus_pro
+    src/main_raw_plus_pro.asm
+)
+
+set_target_properties(tiny_pomodoro_raw_plus_pro PROPERTIES LINKER_LANGUAGE CXX)
+target_link_options(tiny_pomodoro_raw_plus_pro PRIVATE 
+    -nostartfiles 
+    -no-pie
+)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
+    target_link_options(tiny_pomodoro_raw_plus_pro PRIVATE 
+        -s
+        -Wl,--gc-sections
+    )
+endif()
+
+target_link_libraries(tiny_pomodoro_raw PRIVATE X11)
+
+target_link_libraries(tiny_pomodoro_raw_plus PRIVATE
+    pthread
+)
+
+target_link_libraries(tiny_pomodoro_raw_plus_pro PRIVATE
+    pthread
 )
 
 # Build type configurations
@@ -45,7 +74,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Helper: list of pomodoro targets to apply common flags to
-set(POMODORO_TARGETS tiny_pomodoro_fltk tiny_pomodoro_raw)
+set(POMODORO_TARGETS tiny_pomodoro_fltk tiny_pomodoro_raw tiny_pomodoro_raw_plus)
 
 # Release build
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

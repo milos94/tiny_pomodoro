@@ -1,273 +1,304 @@
-// Minimal, self-contained Timer implementation and a tiny X11 UI for the "raw" pomodoro.
-// All code is intentionally placed in this single file.
+/* main_raw.cpp – Pomodoro timer using only Xlib, no external libraries.
+   Same functionality as main_fltk.cpp; optimised for small binary size. */
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <chrono>
-#include <cstdio>
-#include <cstring>
-#include <iostream>
-#include <string>
-#include <thread>
+#include <X11/keysym.h>
+#include <sys/select.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-struct Timer {
-    enum State {Stopped = 0, Running = 1, Paused = 2};
+static const int WIN_W = 320, WIN_H = 420;
 
-    explicit Timer(int seconds = 25 * 60)
-        : initial_seconds(seconds), remaining_seconds(seconds), state(Stopped), stop_flag(false)
-    {}
+/* ── X globals ────────────────────────────────────────────────────────────── */
+static Display*    dpy;
+static Window      win;
+static GC          gc;
+static XFontStruct *fn, *fn_big;   /* regular and large (timer) font */
+static Atom        atom_wm_del;
 
-    ~Timer() {
-        stop_flag = true;
-        if (worker.joinable()) worker.join();
-    }
+/* ── app state ────────────────────────────────────────────────────────────── */
+static int    cur_session  = 0;    /* 0=Focus  1=Short Break  2=Long Break */
+static int    focus_count  = 0;    /* completed focus sessions (for long-break cycle) */
+static int    running      = 0;
+static int    secs_left   = 25 * 60;
+static time_t end_time    = 0;
 
-    void start() {
-        if (state == Running) return;
-        state = Running;
-        if (!worker.joinable()) worker = std::thread(&Timer::thread_func, this);
-    }
+/* editable duration inputs – [0]=focus [1]=short [2]=long */
+static char ib[3][8] = {"25", "5", "15"};   /* input buffers */
+static int  il[3]    = {2, 1, 2};           /* buffer lengths */
+static int  ifocus   = -1;                  /* focused input index, -1=none */
 
-    void pause() { state = Paused; }
+/* ── helpers ──────────────────────────────────────────────────────────────── */
 
-    void reset() {
-        remaining_seconds = initial_seconds;
-        state = Stopped;
-    }
+static const int DEF_MINS[3] = {25, 5, 15};
 
-    void set_duration(int seconds) {
-        initial_seconds = seconds;
-        remaining_seconds = seconds;
-    }
-
-    int seconds_left() const { return remaining_seconds; }
-    bool is_running() const { return state == Running; }
-
-private:
-    void thread_func() {
-        using namespace std::chrono_literals;
-        while (!stop_flag) {
-            if (state != Running) {
-                std::this_thread::sleep_for(100ms);
-                continue;
-            }
-            std::this_thread::sleep_for(1s);
-            if (state != Running) continue;
-            if (remaining_seconds > 0) {
-                --remaining_seconds;
-                if (remaining_seconds <= 0) {
-                    remaining_seconds = 0;
-                    state = Stopped;
-                }
-            }
-        }
-    }
-
-    int initial_seconds;
-    int remaining_seconds;
-    State state;
-    std::thread worker;
-    bool stop_flag;
-};
-
-// Helper: format seconds as MM:SS
-static std::string format_time(int seconds) {
-    if (seconds < 0) seconds = 0;
-    int m = seconds / 60;
-    int s = seconds % 60;
-    char buf[16];
-    std::snprintf(buf, sizeof(buf), "%02d:%02d", m, s);
-    return std::string(buf);
+static int get_mins(int i) {
+    int v = il[i] ? atoi(ib[i]) : 0;
+    return v > 0 ? v : DEF_MINS[i];
 }
 
-int main() {
-    Display* dpy = XOpenDisplay(nullptr);
-    if (!dpy) {
-        std::cerr << "Unable to open X display\n";
-        return 1;
+static int in_rect(int px, int py, int rx, int ry, int rw, int rh) {
+    return px >= rx && px < rx + rw && py >= ry && py < ry + rh;
+}
+
+static void stop_timer(void) { running = 0; end_time = 0; }
+
+static void reset_session(int s) {
+    stop_timer();
+    cur_session = s;
+    secs_left   = get_mins(s) * 60;
+}
+
+/* ── drawing ──────────────────────────────────────────────────────────────── */
+
+static void draw_button(int x, int y, int w, int h,
+                        const char* lbl, unsigned long bg) {
+    XSetForeground(dpy, gc, bg);
+    XFillRectangle(dpy, win, gc, x, y, (unsigned)w, (unsigned)h);
+    XSetForeground(dpy, gc, 0x999999);
+    XDrawRectangle(dpy, win, gc, x, y, (unsigned)(w - 1), (unsigned)(h - 1));
+    XSetForeground(dpy, gc, 0x000000);
+    XSetFont(dpy, gc, fn->fid);
+    int lw = XTextWidth(fn, lbl, (int)strlen(lbl));
+    int ty = y + (h + fn->ascent - fn->descent) / 2;
+    XDrawString(dpy, win, gc, x + (w - lw) / 2, ty, lbl, (int)strlen(lbl));
+}
+
+static void draw_input(int i) {
+    int x = 138, y = 288 + i * 34, iw = 60, ih = 24;
+    XSetForeground(dpy, gc, 0xFFFFFF);
+    XFillRectangle(dpy, win, gc, x, y, (unsigned)iw, (unsigned)ih);
+    XSetForeground(dpy, gc, ifocus == i ? 0x0044DD : 0x999999);
+    XDrawRectangle(dpy, win, gc, x, y, (unsigned)(iw - 1), (unsigned)(ih - 1));
+    XSetForeground(dpy, gc, 0x000000);
+    XSetFont(dpy, gc, fn->fid);
+    int tw = XTextWidth(fn, ib[i], il[i]);
+    int ty = y + (ih + fn->ascent - fn->descent) / 2;
+    XDrawString(dpy, win, gc, x + (iw - tw) / 2, ty, ib[i], il[i]);
+}
+
+static void redraw(void) {
+    static const char* snames[] = {"Focus", "Short Break", "Long Break"};
+    static const int   sx[]     = {14, 116, 218};
+    static const char* rlbl[]   = {"Focus:", "Short Break:", "Long Break:"};
+
+    /* background */
+    XSetForeground(dpy, gc, 0xFFFFFF);
+    XFillRectangle(dpy, win, gc, 0, 0, WIN_W, WIN_H);
+
+    /* session label – centred in the 18px-tall band at the top */
+    XSetForeground(dpy, gc, 0x000000);
+    XSetFont(dpy, gc, fn->fid);
+    {
+        const char* s = snames[cur_session];
+        int sw = XTextWidth(fn, s, (int)strlen(s));
+        XDrawString(dpy, win, gc, (WIN_W - sw) / 2, 18 + fn->ascent,
+                    s, (int)strlen(s));
     }
 
-    int screen = DefaultScreen(dpy);
-    unsigned long black = BlackPixel(dpy, screen);
-    unsigned long white = WhitePixel(dpy, screen);
+    /* timer – large font, centred in the 90 px band starting at y=54 */
+    {
+        char buf[6];
+        snprintf(buf, sizeof(buf), "%02d:%02d", secs_left / 60, secs_left % 60);
+        XSetFont(dpy, gc, fn_big->fid);
+        int tw = XTextWidth(fn_big, buf, 5);
+        int ty = 54 + (90 + fn_big->ascent - fn_big->descent) / 2;
+        XDrawString(dpy, win, gc, (WIN_W - tw) / 2, ty, buf, 5);
+    }
 
-    unsigned int win_w = 360, win_h = 180;
-    Window win = XCreateSimpleWindow(dpy, RootWindow(dpy, screen), 100, 100, win_w, win_h, 1, black, white);
+    /* session selector buttons (y=158, h=28) */
+    for (int i = 0; i < 3; i++)
+        draw_button(sx[i], 158, 88, 28, snames[i],
+                    cur_session == i ? 0xCCCCCC : 0xE8E8E8);
 
-    XSelectInput(dpy, win, ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask);
-    Atom wmDelete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(dpy, win, &wmDelete, 1);
+    /* start/stop button (y=202, h=36) */
+    draw_button(110, 202, 100, 36, running ? "Stop" : "Start", 0xE8E8E8);
+
+    /* separator label */
+    {
+        static const char sep[] = "Durations (minutes)";
+        XSetForeground(dpy, gc, 0x777777);
+        XSetFont(dpy, gc, fn->fid);
+        int tw = XTextWidth(fn, sep, (int)(sizeof(sep) - 1));
+        XDrawString(dpy, win, gc, (WIN_W - tw) / 2, 258 + fn->ascent,
+                    sep, (int)(sizeof(sep) - 1));
+        XSetForeground(dpy, gc, 0x000000);
+    }
+
+    /* duration input rows */
+    for (int i = 0; i < 3; i++) {
+        const char* lbl = rlbl[i];
+        int lw = XTextWidth(fn, lbl, (int)strlen(lbl));
+        int iy = 288 + i * 34;
+        int ty = iy + (24 + fn->ascent - fn->descent) / 2;
+        XSetFont(dpy, gc, fn->fid);
+        /* right-align label with right edge at x=132 */
+        XDrawString(dpy, win, gc, 132 - lw, ty, lbl, (int)strlen(lbl));
+        draw_input(i);
+    }
+
+    XFlush(dpy);
+}
+
+/* ── event handlers ───────────────────────────────────────────────────────── */
+
+static void on_click(int x, int y) {
+    static const int sx[] = {14, 116, 218};
+
+    /* session selector buttons */
+    for (int i = 0; i < 3; i++) {
+        if (in_rect(x, y, sx[i], 158, 88, 28)) {
+            reset_session(i);
+            ifocus = -1;
+            redraw();
+            return;
+        }
+    }
+
+    /* start/stop button */
+    if (in_rect(x, y, 110, 202, 100, 36)) {
+        if (running) {
+            stop_timer();
+        } else {
+            if (secs_left == 0) reset_session(cur_session);
+            running  = 1;
+            end_time = time(NULL) + secs_left;
+        }
+        ifocus = -1;
+        redraw();
+        return;
+    }
+
+    /* click on a duration input field */
+    ifocus = -1;
+    for (int i = 0; i < 3; i++) {
+        if (in_rect(x, y, 138, 288 + i * 34, 60, 24)) {
+            ifocus = i;
+            break;
+        }
+    }
+    redraw();
+}
+
+static void on_key(KeySym ks, const char* txt) {
+    if (ifocus < 0) return;
+    int i = ifocus;
+    if (ks == XK_BackSpace) {
+        if (il[i] > 0) ib[i][--il[i]] = '\0';
+    } else if (ks == XK_Tab || ks == XK_Return) {
+        ifocus = (ifocus + 1) % 3;
+    } else if (txt[0] >= '0' && txt[0] <= '9' && il[i] < 3) {
+        ib[i][il[i]++] = txt[0];
+        ib[i][il[i]]   = '\0';
+    }
+    redraw();
+}
+
+/* ── main ─────────────────────────────────────────────────────────────────── */
+
+int main(void) {
+    dpy = XOpenDisplay(NULL);
+    if (!dpy) return 1;
+
+    int scr = DefaultScreen(dpy);
+    win = XCreateSimpleWindow(dpy, RootWindow(dpy, scr),
+                              100, 100, WIN_W, WIN_H, 0,
+                              BlackPixel(dpy, scr), WhitePixel(dpy, scr));
+    XStoreName(dpy, win, "Tiny Pomodoro");
+
+    /* prevent resizing */
+    XSizeHints sh = {};
+    sh.flags      = PMinSize | PMaxSize;
+    sh.min_width  = sh.max_width  = WIN_W;
+    sh.min_height = sh.max_height = WIN_H;
+    XSetWMNormalHints(dpy, win, &sh);
+
+    /* handle window-close from the WM */
+    atom_wm_del = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(dpy, win, &atom_wm_del, 1);
+
+    XSelectInput(dpy, win, ExposureMask | ButtonPressMask | KeyPressMask);
+
+    /* load fonts – prefer larger variants, fall back gracefully */
+    fn_big = XLoadQueryFont(dpy, "12x24");
+    if (!fn_big) fn_big = XLoadQueryFont(dpy, "10x20");
+    fn     = XLoadQueryFont(dpy, "9x15");
+    if (!fn)     fn     = XLoadQueryFont(dpy, "fixed");
+    if (!fn_big) fn_big = fn;
+
+    gc = XCreateGC(dpy, win, 0, NULL);
+
     XMapWindow(dpy, win);
+    XFlush(dpy);
+    reset_session(0);
 
-    GC gc = XCreateGC(dpy, win, 0, nullptr);
-    XFontStruct* font = XLoadQueryFont(dpy, "-*-helvetica-bold-r-*-*-24-*-*-*-*-*-*-*");
-    if (!font) font = XLoadQueryFont(dpy, "fixed");
-    if (font) XSetFont(dpy, gc, font->fid);
+    int fd   = ConnectionNumber(dpy);
+    int quit = 0;
 
-    // Buttons
-    struct Button { int x,y; unsigned int w,h; std::string label; };
-    Button btn_start{20, 110, 120, 40, "Start"};
-    Button btn_reset{160, 110, 120, 40, "Reset"};
-
-        // Duration controls (minutes)
-        int focus_min = 25;
-        int short_min = 5;
-        int long_min = 15;
-
-        // layout small +/- buttons for each duration
-        Button focus_minus{20, 10, 24, 24, "-"};
-        Button focus_plus{64, 10, 24, 24, "+"};
-        Button short_minus{140, 10, 24, 24, "-"};
-        Button short_plus{184, 10, 24, 24, "+"};
-        Button long_minus{260, 10, 24, 24, "-"};
-        Button long_plus{304, 10, 24, 24, "+"};
-
-        Timer timer(focus_min*60);
-
-    bool running = true;
-
-    auto draw = [&](int last_seconds){
-        XClearWindow(dpy, win);
-
-        // draw time
-        std::string timestr = format_time(last_seconds);
-        int tx = 20;
-        int ty = 60;
-        XSetForeground(dpy, gc, black);
-        XDrawString(dpy, win, gc, tx, ty, timestr.c_str(), (int)timestr.size());
-
-            // draw duration labels
-            XSetForeground(dpy, gc, black);
-            std::string fstr = "Focus: " + std::to_string(focus_min) + "m";
-            std::string sstr = "Short: " + std::to_string(short_min) + "m";
-            std::string lstr = "Long: " + std::to_string(long_min) + "m";
-            XDrawString(dpy, win, gc, 20, 30, fstr.c_str(), (int)fstr.size());
-            XDrawString(dpy, win, gc, 140, 30, sstr.c_str(), (int)sstr.size());
-            XDrawString(dpy, win, gc, 260, 30, lstr.c_str(), (int)lstr.size());
-            // draw small +/- buttons
-            unsigned long gray = (white ^ black) & 0x00cccccc; // best-effort
-            XSetForeground(dpy, gc, gray);
-            XFillRectangle(dpy, win, gc, focus_minus.x, focus_minus.y, focus_minus.w, focus_minus.h);
-            XFillRectangle(dpy, win, gc, focus_plus.x, focus_plus.y, focus_plus.w, focus_plus.h);
-            XFillRectangle(dpy, win, gc, short_minus.x, short_minus.y, short_minus.w, short_minus.h);
-            XFillRectangle(dpy, win, gc, short_plus.x, short_plus.y, short_plus.w, short_plus.h);
-            XFillRectangle(dpy, win, gc, long_minus.x, long_minus.y, long_minus.w, long_minus.h);
-            XFillRectangle(dpy, win, gc, long_plus.x, long_plus.y, long_plus.w, long_plus.h);
-
-            XSetForeground(dpy, gc, black);
-            XDrawRectangle(dpy, win, gc, focus_minus.x, focus_minus.y, focus_minus.w, focus_minus.h);
-            XDrawRectangle(dpy, win, gc, focus_plus.x, focus_plus.y, focus_plus.w, focus_plus.h);
-            XDrawRectangle(dpy, win, gc, short_minus.x, short_minus.y, short_minus.w, short_minus.h);
-            XDrawRectangle(dpy, win, gc, short_plus.x, short_plus.y, short_plus.w, short_plus.h);
-            XDrawRectangle(dpy, win, gc, long_minus.x, long_minus.y, long_minus.w, long_minus.h);
-            XDrawRectangle(dpy, win, gc, long_plus.x, long_plus.y, long_plus.w, long_plus.h);
-
-            // small labels
-            auto draw_small = [&](const Button& b){
-                int lx = b.x + 6;
-                int ly = static_cast<int>(static_cast<unsigned int>(b.y) + b.h/2 + 5);
-                XDrawString(dpy, win, gc, lx, ly, b.label.c_str(), (int)b.label.size());
-            };
-            draw_small(focus_minus); draw_small(focus_plus);
-            draw_small(short_minus); draw_small(short_plus);
-            draw_small(long_minus); draw_small(long_plus);
-
-        // draw buttons (filled rectangles)
-        XSetForeground(dpy, gc, gray);
-        XFillRectangle(dpy, win, gc, btn_start.x, btn_start.y, btn_start.w, btn_start.h);
-        XFillRectangle(dpy, win, gc, btn_reset.x, btn_reset.y, btn_reset.w, btn_reset.h);
-
-        // button borders and labels
-        XSetForeground(dpy, gc, black);
-        XDrawRectangle(dpy, win, gc, btn_start.x, btn_start.y, btn_start.w, btn_start.h);
-        XDrawRectangle(dpy, win, gc, btn_reset.x, btn_reset.y, btn_reset.w, btn_reset.h);
-
-        auto draw_label = [&](const Button& b){
-            int lx = b.x + 10;
-            int ly = static_cast<int>(static_cast<unsigned int>(b.y) + b.h/2 + 5);
-            XDrawString(dpy, win, gc, lx, ly, b.label.c_str(), (int)b.label.size());
-        };
-
-        btn_start.label = timer.is_running() ? "Pause" : "Start";
-        draw_label(btn_start);
-        draw_label(btn_reset);
-    };
-
-    int last_seconds = timer.seconds_left();
-    draw(last_seconds);
-
-    while (running) {
-        while (XPending(dpy) > 0) {
-            XEvent ev;
-            XNextEvent(dpy, &ev);
-            if (ev.type == Expose) {
-                draw(timer.seconds_left());
-            } else if (ev.type == ClientMessage) {
-                if ((Atom)ev.xclient.data.l[0] == wmDelete) {
-                    running = false;
-                }
-            } else if (ev.type == ButtonPress) {
-                int mx = ev.xbutton.x;
-                int my = ev.xbutton.y;
-                auto hit = [&](const Button& b){
-                    return  mx >= b.x && 
-                            mx <= b.x + static_cast<int>(b.w) &&
-                            my >= b.y &&
-                            my <= b.y + static_cast<int>(b.h);
-                };
-                // duration +/- buttons
-                if (hit(focus_minus)) {
-                    focus_min = std::max(1, focus_min - 1);
-                    if (!timer.is_running()) timer.set_duration(focus_min * 60);
-                    draw(timer.seconds_left());
-                } else if (hit(focus_plus)) {
-                    focus_min = std::min(240, focus_min + 1);
-                    if (!timer.is_running()) timer.set_duration(focus_min * 60);
-                    draw(timer.seconds_left());
-                } else if (hit(short_minus)) {
-                    short_min = std::max(1, short_min - 1);
-                    draw(timer.seconds_left());
-                } else if (hit(short_plus)) {
-                    short_min = std::min(120, short_min + 1);
-                    draw(timer.seconds_left());
-                } else if (hit(long_minus)) {
-                    long_min = std::max(1, long_min - 1);
-                    draw(timer.seconds_left());
-                } else if (hit(long_plus)) {
-                    long_min = std::min(240, long_min + 1);
-                    draw(timer.seconds_left());
-                } else if (hit(btn_start)) {
-                    if (timer.is_running()) timer.pause(); else timer.start();
-                    draw(timer.seconds_left());
-                } else if (hit(btn_reset)) {
-                    timer.reset();
-                    draw(timer.seconds_left());
-                }
-            } else if (ev.type == KeyPress) {
-                char buf[16];
-                KeySym keysym;
-                int len = XLookupString(&ev.xkey, buf, sizeof(buf), &keysym, nullptr);
-                if (len > 0) {
-                    if (buf[0] == 'q' || buf[0] == 'Q' || buf[0] == '\x1b') {
-                        running = false;
-                    }
-                }
+    while (!quit) {
+        /* block (or poll with 100 ms timeout when running) until X events arrive */
+        if (!XPending(dpy)) {
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(fd, &fds);
+            if (running) {
+                struct timeval tv = {0, 100000};   /* 100 ms */
+                select(fd + 1, &fds, NULL, NULL, &tv);
+            } else {
+                select(fd + 1, &fds, NULL, NULL, NULL);   /* block */
             }
         }
 
-        int cur = timer.seconds_left();
-        if (cur != last_seconds) {
-            last_seconds = cur;
-            draw(last_seconds);
+        /* advance the countdown using wall-clock time for accuracy */
+        if (running) {
+            int nl = (int)(end_time - time(NULL));
+            if (nl < 0) nl = 0;
+            if (nl != secs_left) {
+                secs_left = nl;
+                if (!secs_left) {
+                    XBell(dpy, 100);
+                    /* auto-advance: Focus→Break, Break→Focus */
+                    int next;
+                    if (cur_session == 0) {
+                        focus_count++;
+                        next = (focus_count % 4 == 0) ? 2 : 1;
+                    } else {
+                        next = 0;
+                    }
+                    reset_session(next);
+                    running  = 1;
+                    end_time = time(NULL) + secs_left;
+                }
+                redraw();
+            }
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        /* drain the pending event queue */
+        while (XPending(dpy)) {
+            XEvent ev;
+            XNextEvent(dpy, &ev);
+            if (ev.type == Expose && ev.xexpose.count == 0) {
+                redraw();
+            } else if (ev.type == ButtonPress && ev.xbutton.button == Button1) {
+                on_click(ev.xbutton.x, ev.xbutton.y);
+            } else if (ev.type == KeyPress) {
+                char   txt[4] = {0};
+                KeySym ks     = 0;
+                XLookupString(&ev.xkey, txt, sizeof(txt), &ks, NULL);
+                on_key(ks, txt);
+            } else if (ev.type == ClientMessage &&
+                       (Atom)ev.xclient.data.l[0] == atom_wm_del) {
+                quit = 1;
+            }
+        }
     }
 
-    if (font) XFreeFont(dpy, font);
+    XFreeFont(dpy, fn);
+    if (fn_big != fn) XFreeFont(dpy, fn_big);
     XFreeGC(dpy, gc);
-    XDestroyWindow(dpy, win);
     XCloseDisplay(dpy);
-
     return 0;
 }
