@@ -3,8 +3,13 @@
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Int_Input.H>
 #include <FL/Fl_Window.H>
+#include <alsa/asoundlib.h>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <string>
+#include <unistd.h>
 
 enum class Session { Focus, ShortBreak, LongBreak };
 
@@ -19,12 +24,98 @@ struct PomodoroApp {
 
     bool    running        = false;
     int     seconds_left   = 0;
+    int     pomodoro_count = 0;
     Session current        = Session::Focus;
 };
 
 static PomodoroApp app;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+// Synthesised fallback beep
+static void play_beep(double freq = 880.0, int duration_ms = 200) {
+    snd_pcm_t* pcm = nullptr;
+    if (snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0) return;
+    snd_pcm_set_params(pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
+                       1, 44100, 1, 50000);
+    const int frames = 44100 * duration_ms / 1000;
+    short buf[frames];
+    for (int i = 0; i < frames; i++)
+        buf[i] = static_cast<short>(32767.0 * std::sin(2.0 * M_PI * freq * i / 44100.0)
+                                    * (1.0 - static_cast<double>(i) / frames));
+    snd_pcm_writei(pcm, buf, frames);
+    snd_pcm_drain(pcm);
+    snd_pcm_close(pcm);
+}
+
+// WAV helpers (little-endian reads)
+static uint16_t wav_u16(FILE* f) {
+    unsigned char b[2]; std::fread(b, 1, 2, f);
+    return static_cast<uint16_t>(b[0] | (b[1] << 8));
+}
+static uint32_t wav_u32(FILE* f) {
+    unsigned char b[4]; std::fread(b, 1, 4, f);
+    return static_cast<uint32_t>(b[0] | (b[1]<<8) | (b[2]<<16) | (b[3]<<24));
+}
+static std::string exe_dir() {
+    char buf[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return ".";
+    buf[n] = '\0';
+    char* slash = std::strrchr(buf, '/');
+    if (slash) *slash = '\0';
+    return std::string(buf);
+}
+// Play a WAV file; falls back to synthesised beep if the file can't be loaded
+static void play_wav(const char* path) {
+    FILE* f = std::fopen(path, "rb");
+    if (!f) { play_beep(); return; }
+
+    char tag[4];
+    if (std::fread(tag, 1, 4, f) != 4 || std::strncmp(tag, "RIFF", 4) != 0)
+        { std::fclose(f); play_beep(); return; }
+    wav_u32(f);
+    if (std::fread(tag, 1, 4, f) != 4 || std::strncmp(tag, "WAVE", 4) != 0)
+        { std::fclose(f); play_beep(); return; }
+
+    uint16_t channels = 1, bits = 16;
+    uint32_t sample_rate = 44100, data_size = 0;
+    bool got_fmt = false, got_data = false;
+    while (std::fread(tag, 1, 4, f) == 4) {
+        uint32_t sz = wav_u32(f);
+        if (std::strncmp(tag, "fmt ", 4) == 0) {
+            uint16_t audio_fmt = wav_u16(f);
+            channels    = wav_u16(f);
+            sample_rate = wav_u32(f);
+            wav_u32(f); wav_u16(f);
+            bits        = wav_u16(f);
+            if (sz > 16) std::fseek(f, static_cast<long>(sz - 16), SEEK_CUR);
+            got_fmt = (audio_fmt == 1);
+        } else if (std::strncmp(tag, "data", 4) == 0) {
+            data_size = sz; got_data = true; break;
+        } else {
+            std::fseek(f, static_cast<long>(sz), SEEK_CUR);
+        }
+    }
+    if (!got_fmt || !got_data || data_size == 0)
+        { std::fclose(f); play_beep(); return; }
+
+    void* pcm_buf = std::malloc(data_size);
+    if (!pcm_buf) { std::fclose(f); play_beep(); return; }
+    uint32_t read_bytes = static_cast<uint32_t>(std::fread(pcm_buf, 1, data_size, f));
+    std::fclose(f);
+
+    snd_pcm_t* pcm = nullptr;
+    if (snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0)
+        { std::free(pcm_buf); play_beep(); return; }
+    snd_pcm_format_t fmt = (bits == 8) ? SND_PCM_FORMAT_U8 : SND_PCM_FORMAT_S16_LE;
+    snd_pcm_set_params(pcm, fmt, SND_PCM_ACCESS_RW_INTERLEAVED,
+                       channels, sample_rate, 1, 50000);
+    snd_pcm_writei(pcm, pcm_buf, read_bytes / (channels * (bits / 8)));
+    snd_pcm_drain(pcm);
+    snd_pcm_close(pcm);
+    std::free(pcm_buf);
+}
 
 static void update_timer_label() {
     char buf[6];
@@ -85,6 +176,21 @@ static void tick_cb(void*) {
         Fl::add_timeout(1.0, tick_cb);
     } else {
         stop_timer();
+        play_wav((exe_dir() + "/sounds/beep.wav").c_str());
+        // advance to next session
+        if (app.current == Session::Focus) {
+            app.pomodoro_count++;
+            if (app.pomodoro_count % 4 == 0)
+                reset_session(Session::LongBreak);
+            else
+                reset_session(Session::ShortBreak);
+        } else {
+            reset_session(Session::Focus);
+        }
+        // auto-start the next session
+        app.running = true;
+        app.start_stop_btn->label("Stop");
+        Fl::add_timeout(1.0, tick_cb);
     }
 }
 

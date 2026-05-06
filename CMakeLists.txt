@@ -13,39 +13,65 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find FLTK (used by the FLTK build only)
-find_package(FLTK REQUIRED)
+find_package(FLTK REQUIRED CONFIG)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-cursor)
+pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
+pkg_check_modules(DBUS REQUIRED dbus-1)
 
 # Create two executables: one using FLTK, one using only raw/native APIs
-add_executable(tiny_pomodoro_fltk
-    src/main_fltk.cpp
+add_executable(tiny_pomodoro
+    src/main.cpp
 )
 
-target_link_libraries(tiny_pomodoro_fltk PRIVATE
+target_include_directories(tiny_pomodoro PRIVATE
+    ${GTK3_INCLUDE_DIRS}
+    ${WAYLAND_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+    ${DBUS_INCLUDE_DIRS}
+)
+
+target_link_libraries(tiny_pomodoro PRIVATE
     fltk
     X11 Xext Xinerama Xcursor Xrender Xfixes fontconfig
-    pangocairo-1.0 pango-1.0 gobject-2.0 glib-2.0 harfbuzz
-    cairo gtk-3 gdk-3 atk-1.0 cairo-gobject gdk_pixbuf-2.0 gio-2.0
-    wayland-cursor wayland-client xkbcommon dbus-1
+    ${GTK3_LIBRARIES}
+    ${WAYLAND_LIBRARIES}
+    ${XKBCOMMON_LIBRARIES}
+    ${DBUS_LIBRARIES}
+    asound
     z m pthread dl
 )
 
-# Minimal/raw build (no FLTK)
-add_executable(tiny_pomodoro_raw
-    src/main_raw.cpp
+target_link_directories(tiny_pomodoro PRIVATE
+    ${GTK3_LIBRARY_DIRS}
+    ${WAYLAND_LIBRARY_DIRS}
+    ${XKBCOMMON_LIBRARY_DIRS}
+    ${DBUS_LIBRARY_DIRS}
 )
 
-target_link_libraries(tiny_pomodoro_raw PRIVATE
+# Minimal/raw build (no FLTK)
+add_executable(tiny_pomodoro_pro
+    src/main_pro.cpp
+)
+
+target_link_libraries(tiny_pomodoro_pro PRIVATE
     X11 Xext Xinerama Xcursor Xrender Xfixes fontconfig
+    asound
     z m pthread dl
 )
 
 # Build type configurations
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+    set(CMAKE_BUILD_TYPE Tiny)
 endif()
 
 # Helper: list of pomodoro targets to apply common flags to
-set(POMODORO_TARGETS tiny_pomodoro_fltk tiny_pomodoro_raw)
+set(POMODORO_TARGETS tiny_pomodoro tiny_pomodoro_pro)
+
+# Per-build-type output directory
+string(TOLOWER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_LOWER)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build/${BUILD_TYPE_LOWER}")
 
 # Release build
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -80,8 +106,26 @@ endif()
 # Tiny build - minimal executable size
 if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
     foreach(tgt ${POMODORO_TARGETS})
-        target_compile_options(${tgt} PRIVATE -Oz -ffunction-sections -fdata-sections -fno-rtti -fno-exceptions)
-        target_link_options(${tgt} PRIVATE -Wl,--gc-sections -Wl,-s)
+        target_compile_options(${tgt} PRIVATE
+            -Oz
+            -ffunction-sections
+            -fdata-sections
+            -fno-rtti
+            -fno-exceptions
+            -flto=thin
+            -fvisibility=hidden
+            -fno-unwind-tables
+            -fno-asynchronous-unwind-tables
+            -fmerge-all-constants
+        )
+        target_link_options(${tgt} PRIVATE
+            -fuse-ld=lld
+            -flto=thin
+            -Wl,--gc-sections
+            -Wl,-s
+            -Wl,--as-needed
+            -Wl,--icf=all
+        )
     endforeach()
 endif()
 
