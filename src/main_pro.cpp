@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 #include <cstring>
 #include <unistd.h>
 #include <iostream>
@@ -90,11 +91,11 @@ static void play_beep(double freq = 880.0, int duration_ms = 200) {
     snd_pcm_set_params(pcm, SND_PCM_FORMAT_S16_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
                        1, 44100, 1, 50000);
     const int frames = 44100 * duration_ms / 1000;
-    short buf[frames];
+    std::vector<short> buf(static_cast<std::size_t>(frames));
     for (int i = 0; i < frames; i++)
-        buf[i] = static_cast<short>(32767.0 * std::sin(2.0 * M_PI * freq * i / 44100.0)
+        buf[static_cast<std::size_t>(i)] = static_cast<short>(32767.0 * std::sin(2.0 * M_PI * freq * i / 44100.0)
                                     * (1.0 - static_cast<double>(i) / frames));
-    snd_pcm_writei(pcm, buf, frames);
+    snd_pcm_writei(pcm, buf.data(), static_cast<snd_pcm_uframes_t>(frames));
     snd_pcm_drain(pcm);
     snd_pcm_close(pcm);
 }

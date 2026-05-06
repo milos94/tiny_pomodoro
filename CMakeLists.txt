@@ -61,13 +61,22 @@ target_link_libraries(tiny_pomodoro_pro PRIVATE
     z m pthread dl
 )
 
+# Terminal-only build (STL + POSIX, no GUI, no ALSA)
+add_executable(tiny_pomodoro_pro_plus
+    src/main_pro_plus.cpp
+)
+
+target_link_libraries(tiny_pomodoro_pro_plus PRIVATE
+    pthread
+)
+
 # Build type configurations
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Tiny)
 endif()
 
 # Helper: list of pomodoro targets to apply common flags to
-set(POMODORO_TARGETS tiny_pomodoro tiny_pomodoro_pro)
+set(POMODORO_TARGETS tiny_pomodoro tiny_pomodoro_pro tiny_pomodoro_pro_plus)
 
 # Per-build-type output directory
 string(TOLOWER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_LOWER)

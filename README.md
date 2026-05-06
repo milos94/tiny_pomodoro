@@ -20,14 +20,15 @@ This project is a functional pomodoro timer application that demonstrates size o
 - **GUI**:
   - `tiny_pomodoro` — FLTK-based GUI
   - `tiny_pomodoro_pro` — raw X11 (no extra GUI framework)
-- **Audio**: ALSA (direct PCM; synthesised beep fallback if WAV not found)
+  - `tiny_pomodoro_pro_plus` — terminal UI (ANSI escapes, no X11/FLTK/ALSA)
+- **Audio**: ALSA (direct PCM; synthesised beep fallback if WAV not found); terminal bell `\a` for `tiny_pomodoro_pro_plus`
 
 ## Features
 
 - Automatic session progression: Focus → Short Break → (every 4th) Long Break → repeat
-- Adjustable durations per session type via +/- buttons
-- Sound notification at session end (custom WAV or synthesised beep)
-- Keyboard shortcuts: `q` / `Esc` to quit
+- Adjustable durations per session type via +/- buttons (GUI) or keyboard shortcuts (terminal)
+- Sound notification at session end (custom WAV or synthesised beep; terminal bell for `tiny_pomodoro_pro_plus`)
+- Keyboard shortcuts: `q` / `Esc` to quit; `s` start/pause, `r` reset, `f/F` `b/B` `l/L` adjust durations (terminal)
 
 ## Prerequisites
 
@@ -75,10 +76,12 @@ build/
   tiny/
     tiny_pomodoro          ← FLTK build
     tiny_pomodoro_pro      ← raw X11 build
+    tiny_pomodoro_pro_plus ← terminal-only build
     sounds/beep.wav        ← copied by build_all.sh
   release/
     tiny_pomodoro
     tiny_pomodoro_pro
+    tiny_pomodoro_pro_plus
     sounds/beep.wav
   debug/   debugasan/   debugubsan/   (same structure)
 ```
