@@ -1,6 +1,7 @@
 # Tiny Pomodoro
 
 A minimal pomodoro timer application built with a focus on **executable size optimization**.
+**Note:** the code and the readme have been AI generated.
 
 ## Purpose
 
