@@ -70,6 +70,14 @@ target_link_libraries(tiny_pomodoro_pro_plus PRIVATE
     pthread
 )
 
+# Assembly build (pure Linux syscalls, no libc)
+enable_language(ASM_NASM)
+set(CMAKE_ASM_NASM_FLAGS "-f elf64")
+set(CMAKE_ASM_NASM_LINK_EXECUTABLE "ld -o <TARGET> <OBJECTS> -nostdlib -static")
+add_executable(tiny_pomodoro_pro_plus_ultra
+    src/main_pro_plus_ultra.asm
+)
+
 # Build type configurations
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Tiny)
@@ -114,6 +122,8 @@ endif()
 
 # Tiny build - minimal executable size
 if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
+    set(CMAKE_ASM_NASM_FLAGS "-f elf64 -Ox")
+    set(CMAKE_ASM_NASM_LINK_EXECUTABLE "ld -o <TARGET> <OBJECTS> -nostdlib -static -s")
     foreach(tgt ${POMODORO_TARGETS})
         target_compile_options(${tgt} PRIVATE
             -Oz
