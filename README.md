@@ -14,21 +14,23 @@ This project is a functional pomodoro timer application that demonstrates size o
 
 ## Tech Stack
 
-- **Language**: C++23
-- **Compiler**: clang++-20
+- **Language**: C++23 and x86-64 Assembly (NASM)
+- **Compiler**: clang++-20, NASM
 - **Build System**: CMake 3.20+
 - **GUI**:
   - `tiny_pomodoro` — FLTK-based GUI
   - `tiny_pomodoro_pro` — raw X11 (no extra GUI framework)
   - `tiny_pomodoro_pro_plus` — terminal UI (ANSI escapes, no X11/FLTK/ALSA)
-- **Audio**: ALSA (direct PCM; synthesised beep fallback if WAV not found); terminal bell `\a` for `tiny_pomodoro_pro_plus`
+  - `tiny_pomodoro_pro_plus_ultra` — terminal UI in pure x86-64 assembly (raw Linux syscalls, no libc)
+- **Audio**: ALSA (direct PCM; synthesised beep fallback if WAV not found); terminal bell via `/dev/tty` for terminal builds
 
 ## Features
 
 - Automatic session progression: Focus → Short Break → (every 4th) Long Break → repeat
 - Adjustable durations per session type via +/- buttons (GUI) or keyboard shortcuts (terminal)
-- Sound notification at session end (custom WAV or synthesised beep; terminal bell for `tiny_pomodoro_pro_plus`)
+- Sound notification at session end (custom WAV or synthesised beep; bell via `/dev/tty` for terminal builds)
 - Keyboard shortcuts: `q` / `Esc` to quit; `s` start/pause, `r` reset, `f/F` `b/B` `l/L` adjust durations (terminal)
+- `tiny_pomodoro_pro_plus_ultra`: pure x86-64 NASM, no libc, no runtime — only Linux syscalls
 
 ## Prerequisites
 
@@ -39,7 +41,8 @@ sudo apt install \
   libgtk-3-dev libpango1.0-dev libcairo2-dev libglib2.0-dev \
   libharfbuzz-dev libatk1.0-dev libgdk-pixbuf-2.0-dev \
   libwayland-dev libxkbcommon-dev libdbus-1-dev \
-  libasound2-dev
+  libasound2-dev \
+  nasm
 ```
 
 ## Building
@@ -74,14 +77,16 @@ cmake --build build/release
 ```
 build/
   tiny/
-    tiny_pomodoro          ← FLTK build
-    tiny_pomodoro_pro      ← raw X11 build
-    tiny_pomodoro_pro_plus ← terminal-only build
-    sounds/beep.wav        ← copied by build_all.sh
+    tiny_pomodoro                  ← FLTK build
+    tiny_pomodoro_pro              ← raw X11 build
+    tiny_pomodoro_pro_plus         ← terminal-only C++ build
+    tiny_pomodoro_pro_plus_ultra   ← terminal-only assembly build
+    sounds/beep.wav                ← copied by build_all.sh
   release/
     tiny_pomodoro
     tiny_pomodoro_pro
     tiny_pomodoro_pro_plus
+    tiny_pomodoro_pro_plus_ultra
     sounds/beep.wav
   debug/   debugasan/   debugubsan/   (same structure)
 ```
@@ -102,6 +107,8 @@ Place a PCM WAV file named `beep.wav` in the project root before running `build_
 - `-Wl,--icf=all` — identical code folding (requires LLD)
 - `-Wl,--as-needed` — strips unused library references
 - `-Wl,-s` — strips the symbol table
+- `nasm -Ox` — NASM multi-pass optimizer for shortest instruction encodings (assembly target)
+- `ld -nostdlib -static -s` — links assembly target with no libc and strips all symbols
 
 ## Notes
 
