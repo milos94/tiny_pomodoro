@@ -1,9 +1,11 @@
 // Terminal-only Pomodoro timer — STL + POSIX only, no GUI framework.
 // All code is intentionally placed in this single file.
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 
