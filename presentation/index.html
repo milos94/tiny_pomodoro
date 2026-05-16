@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Building the tiniest pomodoro app</title>
+
+  <link rel="stylesheet" href="reveal.js/dist/reset.css"/>
+  <link rel="stylesheet" href="reveal.js/dist/reveal.css"/>
+  <link rel="stylesheet" href="reveal.js/dist/theme/black.css"/>
+  <link rel="stylesheet" href="reveal.js/dist/plugin/highlight/monokai.css"/>
+
+  <style>
+    .reveal { font-size: 36px; }
+    .reveal h1 { font-size: 1.8em; }
+    .reveal h2 { font-size: 1.3em; }
+    .reveal h3 { font-size: 1.0em; margin-bottom: 0.4em; }
+    .reveal pre  { width: 100%; margin: 0 auto; box-shadow: none; }
+    .reveal pre code { max-height: 530px; font-size: 1em; line-height: 1.35; }
+    .reveal section { text-align: left; }
+    .reveal section.center-slide { text-align: center; }
+    .reveal ul { margin-left: 1.4em; }
+    .reveal li { margin: 0.3em 0; }
+
+    .flag-list { list-style: none; margin: 0.5em 0 0 0; padding: 0; font-family: monospace; }
+    .flag-list li { padding: 0.25em 0.6em; margin: 0.2em 0; background: rgba(255,255,255,0.05); border-left: 3px solid #61dafb; font-size: 0.72em; }
+    .flag-list li .desc { color: #888; font-family: sans-serif; font-size: 0.92em; }
+
+    .reveal table { font-size: 0.68em; border-collapse: collapse; margin: 0 auto; }
+    .reveal table th { background: #1e2a3a; padding: 0.5em 1em; text-align: center; }
+    .reveal table td { padding: 0.4em 1em; text-align: center; border-bottom: 1px solid #333; }
+    .reveal table tr:hover td { background: rgba(255,255,255,0.04); }
+
+    .good  { color: #4ec94e; font-weight: bold; }
+    .great { color: #56b6c2; font-weight: bold; }
+    .dim   { color: #888; }
+    .warn  { color: #e06c75; }
+    .ref   { color: #61dafb; }
+
+    .img-placeholder { background: #1e2030; border: 2px dashed #444; border-radius: 6px; min-height: 340px; display: flex; align-items: center; justify-content: center; color: #555; font-family: monospace; font-size: 0.65em; padding: 1em; margin: 0 auto; max-width: 90%; }
+    .img-fill { max-width: 92%; max-height: 72vh; display: block; margin: 0 auto; border-radius: 4px; }
+
+    .impl-prev { font-family: monospace; font-size: 1.2em; color: #666; display: block; margin-top: 0.3em; }
+    .impl-suffix { font-family: monospace; font-size: 1.2em; display: block; margin-top: 0.3em; white-space: nowrap; }
+    .impl-suffix .base { color: #555; }
+    .impl-suffix .new  { color: #61dafb; font-weight: bold; }
+    .impl-name { font-family: monospace; font-size: 1.4em; display: block; margin-top: 0.3em; }
+
+    .summary-table td:first-child { text-align: left; font-family: monospace; }
+    .summary-table td { text-align: right; font-family: monospace; }
+  </style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- 1 TITLE -->
+<section class="center-slide">
+  <h1>Building the tiniest<br/>pomodoro app</h1>
+  <p style="margin-top:0.6em; font-size:0.6em; color:#888;">Anđelković, Miloš</p>
+</section>
+
+<!-- 2 WHAT IS POMODORO -->
+<section>
+  <h2>What is Pomodoro?</h2>
+  <ul>
+    <li>25 min focus session</li>
+    <li>5 min short break</li>
+    <li>15 min long break every 4 rounds</li>
+    <li>Repeat</li>
+  </ul>
+</section>
+
+<!-- 3 THE PROBLEM text -->
+<section>
+  <h2>The Problem</h2>
+  <ul>
+    <li>Wanted: a pomodoro timer</li>
+    <li>Opened: Linux Mint Software Manager</li>
+  </ul>
+</section>
+
+<!-- 4 PROBLEM IMAGE 1 -->
+<section class="center-slide">
+  <img src="pomodorlom_1.png" class="img-fill"
+       alt="Linux Mint Software Manager"
+       onerror="showPlaceholder(this,'pomodorlom_1.png')"/>
+</section>
+
+<!-- 5 PROBLEM IMAGE 2 -->
+<section class="center-slide">
+  <img src="pomodorlom_2.png" class="img-fill"
+       alt="Linux Mint Software Manager — disk space"
+       onerror="showPlaceholder(this,'pomodorlom_2.png')"/>
+</section>
+
+<!-- 6 PROBLEM IMAGE 3 -->
+<section class="center-slide">
+  <img src="pomodorlom_3.png" class="img-fill"
+       alt="Linux Mint Software Manager — detail"
+       onerror="showPlaceholder(this,'pomodorlom_3.png')"/>
+  <p style="margin-top:0.5em; font-size:0.7em;">4Mb = 500 KB</p>
+</section>
+
+<!-- 7 BENCHMARK  (lines one by one, title last) -->
+<section>
+  <h2 class="fragment" data-fragment-index="5">The Benchmark</h2>
+  <ul>
+    <li>Team dinner</li>
+    <li class="fragment" data-fragment-index="1">Team lead pulled out his phone</li>
+    <li class="fragment" data-fragment-index="2">Asked ChatGPT for a pomodoro timer</li>
+    <li class="fragment" data-fragment-index="3">HTML + CSS + JavaScript</li>
+    <li class="fragment good" data-fragment-index="4">Works great &mdash; <strong>20 KB</strong></li>
+  </ul>
+</section>
+
+<!-- 8 BENCHMARK IMAGE -->
+<section class="center-slide">
+  <img src="img/gpt_pomodoro.png" class="img-fill"
+       alt="ChatGPT-generated pomodoro timer"
+       onerror="showPlaceholder(this,'img/gpt_pomodoro.png')"/>
+</section>
+
+<!-- 9 IMPL TITLE: tiny_pomodoro -->
+<section class="center-slide">
+  <span class="impl-name">tiny_pomodoro</span>
+</section>
+
+<!-- 10 FLTK INTRO -->
+<section>
+  <h2><code>tiny_pomodoro</code></h2>
+  <p class="dim" style="font-size:0.7em;margin-bottom:0.6em">First implementation &mdash; full GUI with FLTK</p>
+  <ul class="flag-list">
+    <li>fltk</li>
+    <li>X11 &nbsp; Xext &nbsp; Xinerama &nbsp; Xcursor &nbsp; Xrender &nbsp; Xfixes &nbsp; fontconfig</li>
+    <li>GTK3 &nbsp; Pango &nbsp; Cairo &nbsp; GLib &nbsp; Harfbuzz &nbsp; ATK &nbsp; GDK-PixBuf</li>
+    <li>Wayland &nbsp; XKBCommon &nbsp; DBus</li>
+    <li>ALSA &nbsp; pthread &nbsp; libm &nbsp; libz &nbsp; libdl</li>
+  </ul>
+</section>
+
+<!-- 11 FLTK LIBRARY -->
+<section>
+  <h2>FLTK</h2>
+  <p class="dim" style="font-size:0.7em;margin-bottom:0.6em">Fast Light Toolkit &mdash; C++ GUI library</p>
+  <ul>
+    <li>Widget-based: windows, buttons, inputs, labels</li>
+    <li>Single-threaded event loop &mdash; <code>Fl::run()</code></li>
+    <li>Built-in timer &mdash; <code>Fl::add_timeout()</code></li>
+    <li>Abstracts over X11, Wayland, GTK, Cairo&hellip;</li>
+  </ul>
+</section>
+
+<!-- 12 FLTK CODE 1 -->
+<section>
+  <h3><code>tiny_pomodoro</code> &mdash; app struct</h3>
+<pre><code class="language-cpp" data-trim>
+#include &lt;FL/Fl.H&gt;
+#include &lt;FL/Fl_Box.H&gt;
+#include &lt;FL/Fl_Button.H&gt;
+#include &lt;FL/Fl_Int_Input.H&gt;
+#include &lt;FL/Fl_Window.H&gt;
+#include &lt;alsa/asoundlib.h&gt;
+
+enum class Session { Focus, ShortBreak, LongBreak };
+
+struct PomodoroApp {
+    Fl_Window*    window         = nullptr;
+    Fl_Box*       session_label  = nullptr;
+    Fl_Box*       timer_label    = nullptr;
+    Fl_Button*    start_stop_btn = nullptr;
+    Fl_Int_Input* focus_input    = nullptr;
+    Fl_Int_Input* short_input    = nullptr;
+    Fl_Int_Input* long_input     = nullptr;
+
+    bool    running        = false;
+    int     seconds_left   = 0;
+    int     pomodoro_count = 0;
+    Session current        = Session::Focus;
+};
+
+static PomodoroApp app;
+</code></pre>
+</section>
+
+<!-- 13 FLTK CODE 2 -->
+<section>
+  <h3><code>tiny_pomodoro</code> &mdash; widgets</h3>
+<pre><code class="language-cpp" data-trim>
+int main() {
+    app.window = new Fl_Window(320, 420, "Tiny Pomodoro");
+    app.window-&gt;color(FL_WHITE);
+
+    app.session_label = new Fl_Box(0, 18, 320, 28, "Focus");
+    app.session_label-&gt;labelsize(15);
+    app.session_label-&gt;labelfont(FL_BOLD);
+
+    app.timer_label = new Fl_Box(0, 54, 320, 90, "25:00");
+    app.timer_label-&gt;labelsize(60);
+    app.timer_label-&gt;labelfont(FL_BOLD);
+
+    auto* btn_focus = new Fl_Button( 14, 158, 88, 28, "Focus");
+    auto* btn_short = new Fl_Button(116, 158, 88, 28, "Short Break");
+    auto* btn_long  = new Fl_Button(218, 158, 88, 28, "Long Break");
+    btn_focus-&gt;callback(session_cb, &amp;s_focus);
+    btn_short-&gt;callback(session_cb, &amp;s_short);
+    btn_long -&gt;callback(session_cb, &amp;s_long);
+
+    app.start_stop_btn = new Fl_Button(110, 202, 100, 36, "Start");
+    app.start_stop_btn-&gt;callback(start_stop_cb);
+
+    app.focus_input = new Fl_Int_Input(138, 288, 60, 24); app.focus_input-&gt;value("25");
+    app.short_input = new Fl_Int_Input(138, 322, 60, 24); app.short_input-&gt;value("5");
+    app.long_input  = new Fl_Int_Input(138, 356, 60, 24); app.long_input-&gt;value("15");
+
+    app.window-&gt;end();
+    app.window-&gt;show();
+    return Fl::run();
+}
+</code></pre>
+</section>
+
+<!-- 14 FLTK CODE 3 -->
+<section>
+  <h3><code>tiny_pomodoro</code> &mdash; timer callback</h3>
+<pre><code class="language-cpp" data-trim>
+static void tick_cb(void*) {
+    if (!app.running) return;
+    if (app.seconds_left &gt; 0) {
+        --app.seconds_left;
+        update_timer_label();
+        Fl::add_timeout(1.0, tick_cb);   // re-arm every second
+    } else {
+        stop_timer();
+        play_wav((exe_dir() + "/sounds/beep.wav").c_str());
+        if (app.current == Session::Focus) {
+            app.pomodoro_count++;
+            if (app.pomodoro_count % 4 == 0)
+                reset_session(Session::LongBreak);
+            else
+                reset_session(Session::ShortBreak);
+        } else {
+            reset_session(Session::Focus);
+        }
+        app.running = true;
+        Fl::add_timeout(1.0, tick_cb);   // auto-start next session
+    }
+}
+</code></pre>
+</section>
+
+<!-- 15 FLTK BUILD SIZES  (tiny excluded) -->
+<section>
+  <h3><code>tiny_pomodoro</code> &mdash; build sizes</h3>
+  <table>
+    <thead><tr><th>Build</th><th>File size</th><th>Disk usage</th></tr></thead>
+    <tbody>
+      <tr><td>debug</td>     <td>1.2 MB</td>  <td>1.2 MB</td></tr>
+      <tr><td>debugasan</td> <td>4.1 MB</td>  <td>4.1 MB</td></tr>
+      <tr><td>debugubsan</td><td>1.6 MB</td>  <td>1.7 MB</td></tr>
+      <tr><td>release</td>   <td>1.1 MB</td>  <td>1.1 MB</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 16 TINY BUILD INTRO -->
+<section>
+  <h2>The Tiny Build</h2>
+  <ul>
+    <li>Clang + LLD &mdash; size-first optimization</li>
+    <li>10 compiler flags</li>
+    <li>5 linker flags</li>
+    <li>Goal: smallest possible binary</li>
+  </ul>
+</section>
+
+<!-- 17 COMPILER FLAGS 1/2 -->
+<section>
+  <h2>Compiler Flags &mdash; 1&thinsp;/&thinsp;2</h2>
+  <ul class="flag-list">
+    <li><code>-Oz</code>                 <span class="desc">&mdash; max size optimization (clang)</span></li>
+    <li><code>-ffunction-sections</code> <span class="desc">&mdash; one ELF section per function</span></li>
+    <li><code>-fdata-sections</code>     <span class="desc">&mdash; one ELF section per data object</span></li>
+    <li><code>-fno-rtti</code>           <span class="desc">&mdash; remove type-info tables</span></li>
+    <li><code>-fno-exceptions</code>     <span class="desc">&mdash; remove exception handling</span></li>
+  </ul>
+</section>
+
+<!-- 18 COMPILER FLAGS 2/2 -->
+<section>
+  <h2>Compiler Flags &mdash; 2&thinsp;/&thinsp;2</h2>
+  <ul class="flag-list">
+    <li><code>-flto=thin</code>                      <span class="desc">&mdash; cross-TU dead code elimination</span></li>
+    <li><code>-fvisibility=hidden</code>             <span class="desc">&mdash; no exported symbols by default</span></li>
+    <li><code>-fno-unwind-tables</code>              <span class="desc">&mdash; remove .eh_frame section</span></li>
+    <li><code>-fno-asynchronous-unwind-tables</code> <span class="desc">&mdash; no async unwind metadata</span></li>
+    <li><code>-fmerge-all-constants</code>           <span class="desc">&mdash; deduplicate identical constants</span></li>
+  </ul>
+</section>
+
+<!-- 19 LINKER FLAGS -->
+<section>
+  <h2>Linker Flags</h2>
+  <ul class="flag-list">
+    <li><code>-fuse-ld=lld</code>      <span class="desc">&mdash; use LLVM LLD linker</span></li>
+    <li><code>-Wl,--gc-sections</code> <span class="desc">&mdash; discard unreferenced sections</span></li>
+    <li><code>-Wl,--icf=all</code>     <span class="desc">&mdash; identical code folding</span></li>
+    <li><code>-Wl,-s</code>            <span class="desc">&mdash; strip symbol table</span></li>
+    <li><code>-Wl,--as-needed</code>   <span class="desc">&mdash; drop unused library references</span></li>
+  </ul>
+</section>
+
+<!-- 20 FLTK TINY RESULT -->
+<section>
+  <h3><code>tiny_pomodoro</code> &mdash; tiny vs benchmark</h3>
+  <table>
+    <thead><tr><th></th><th>File size</th></tr></thead>
+    <tbody>
+      <tr><td>debug</td>                          <td>1.2 MB</td></tr>
+      <tr><td>release</td>                        <td>1.1 MB</td></tr>
+      <tr class="good"><td><strong>tiny</strong></td><td><strong>831 KB</strong></td></tr>
+      <tr class="ref"><td>ChatGPT HTML/JS</td>    <td>20 KB</td></tr>
+    </tbody>
+  </table>
+  <p class="warn" style="font-size:0.65em;margin-top:0.8em">Still 40&times; larger than the benchmark</p>
+</section>
+
+<!-- 21 TRANSITION A: prev = tiny_pomodoro -->
+<section class="center-slide">
+  <span class="impl-suffix"><span class="base">tiny_pomodoro</span></span>
+</section>
+
+<!-- 22 TRANSITION B: suffix _pro -->
+<section class="center-slide">
+  <span class="impl-suffix">
+    <span class="base">tiny_pomodoro</span><span class="new">_pro</span>
+  </span>
+</section>
+
+<!-- 23 X11 INTRO -->
+<section>
+  <h2><code>tiny_pomodoro_pro</code></h2>
+  <p class="dim" style="font-size:0.7em;margin-bottom:0.6em">Remove FLTK &mdash; use raw Xlib</p>
+  <ul class="flag-list">
+    <li>X11 &nbsp; Xext &nbsp; Xinerama &nbsp; Xcursor &nbsp; Xrender &nbsp; Xfixes &nbsp; fontconfig</li>
+    <li>ALSA &nbsp; pthread &nbsp; libm &nbsp; libz &nbsp; libdl</li>
+  </ul>
+  <ul style="margin-top:0.8em; font-size:0.8em">
+    <li>No widgets &mdash; no abstraction layer</li>
+    <li>Manual window, event loop, drawing</li>
+  </ul>
+</section>
+
+<!-- 24 X11 LIBRARY -->
+<section>
+  <h2>X11 &mdash; Xlib</h2>
+  <p class="dim" style="font-size:0.7em;margin-bottom:0.6em">The layer FLTK sits on top of</p>
+  <ul>
+    <li>X Window System &mdash; display server protocol</li>
+    <li>Primitives only: windows, drawing contexts, fonts, lines</li>
+    <li>No widget abstraction &mdash; everything manual</li>
+    <li>Event loop &mdash; <code>XNextEvent()</code></li>
+    <li>~40&times; fewer dependencies than FLTK</li>
+  </ul>
+</section>
+
+<!-- 25 X11 CODE 1 -->
+<section>
+  <h3><code>tiny_pomodoro_pro</code> &mdash; Timer</h3>
+<pre><code class="language-cpp" data-trim>
+struct Timer {
+    enum State { Stopped, Running, Paused };
+
+    explicit Timer(int seconds = 25 * 60)
+        : initial_seconds(seconds), remaining_seconds(seconds),
+          state(Stopped), stop_flag(false) {}
+
+    void start() {
+        if (state == Running) return;
+        state = Running;
+        if (!worker.joinable())
+            worker = std::thread(&amp;Timer::thread_func, this);
+    }
+    void pause() { state = Paused; }
+    void reset() { remaining_seconds = initial_seconds; state = Stopped; }
+
+private:
+    void thread_func() {
+        using namespace std::chrono_literals;
+        while (!stop_flag) {
+            if (state != Running) { std::this_thread::sleep_for(100ms); continue; }
+            std::this_thread::sleep_for(1s);
+            if (state != Running) continue;
+            if (remaining_seconds &gt; 0 &amp;&amp; --remaining_seconds == 0)
+                state = Stopped;
+        }
+    }
+    int initial_seconds, remaining_seconds;
+    State state;
+    std::thread worker;
+    bool stop_flag;
+};
+</code></pre>
+</section>
+
+<!-- 26 X11 CODE 2 -->
+<section>
+  <h3><code>tiny_pomodoro_pro</code> &mdash; window &amp; fonts</h3>
+<pre><code class="language-cpp" data-trim>
+Display* dpy    = XOpenDisplay(nullptr);
+int      screen = DefaultScreen(dpy);
+unsigned long black = BlackPixel(dpy, screen);
+unsigned long white = WhitePixel(dpy, screen);
+
+Window win = XCreateSimpleWindow(
+    dpy, RootWindow(dpy, screen),
+    100, 100, 360, 210, 1, black, white);
+
+XSelectInput(dpy, win,
+    ExposureMask | KeyPressMask |
+    ButtonPressMask | StructureNotifyMask);
+
+Atom wmDelete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+XSetWMProtocols(dpy, win, &amp;wmDelete, 1);
+XMapWindow(dpy, win);
+GC gc = XCreateGC(dpy, win, 0, nullptr);
+
+XFontStruct* font_big = XLoadQueryFont(dpy,
+    "-*-helvetica-bold-r-*-*-24-*-*-*-*-*-*-*");
+if (!font_big) font_big = XLoadQueryFont(dpy, "fixed");
+
+XColor xcol{};
+XAllocNamedColor(dpy, DefaultColormap(dpy, screen),
+    "gray85", &amp;xcol, &amp;xcol);
+</code></pre>
+</section>
+
+<!-- 27 X11 CODE 3 -->
+<section>
+  <h3><code>tiny_pomodoro_pro</code> &mdash; drawing</h3>
+<pre><code class="language-cpp" data-trim>
+auto draw_centered = [&amp;](XFontStruct* fnt, int bx, int by,
+                          unsigned int bw, unsigned int bh,
+                          const char* text) {
+    int tw = XTextWidth(fnt, text, std::strlen(text));
+    int tx = bx + ((int)bw - tw) / 2;
+    int ty = by + (int)bh / 2 + (fnt-&gt;ascent - fnt-&gt;descent) / 2;
+    XSetFont(dpy, gc, fnt-&gt;fid);
+    XDrawString(dpy, win, gc, tx, ty, text, std::strlen(text));
+};
+
+auto draw = [&amp;](int secs) {
+    XClearWindow(dpy, win);
+    XSetForeground(dpy, gc, black);
+    draw_centered(font_small, 0, 6, win_w, 20, sess_name);
+    draw_centered(font_big,   0, 30, win_w, 52, timestr.c_str());
+    XDrawLine(dpy, win, gc, 10, 90, win_w - 10, 90);
+
+    auto draw_btn = [&amp;](const Button&amp; b) {
+        XSetForeground(dpy, gc, gray);
+        XFillRectangle(dpy, win, gc, b.x, b.y, b.w, b.h);
+        XSetForeground(dpy, gc, black);
+        XDrawRectangle(dpy, win, gc, b.x, b.y, b.w, b.h);
+        draw_centered(font_small, b.x, b.y, b.w, b.h, b.label.c_str());
+    };
+    draw_btn(focus_minus); draw_btn(focus_plus);
+    draw_btn(btn_start);   draw_btn(btn_reset);
+};
+</code></pre>
+</section>
+
+<!-- 28 X11 BUILD SIZES -->
+<section>
+  <h3><code>tiny_pomodoro_pro</code> &mdash; build sizes</h3>
+  <table>
+    <thead><tr><th>Build</th><th>File size</th><th>Disk usage</th></tr></thead>
+    <tbody>
+      <tr><td>debug</td>     <td>245 KB</td>   <td>248 KB</td></tr>
+      <tr><td>debugasan</td> <td>3.2 MB</td>   <td>3.2 MB</td></tr>
+      <tr><td>debugubsan</td><td>749 KB</td>   <td>752 KB</td></tr>
+      <tr><td>release</td>   <td>33.8 KB</td>  <td>36 KB</td></tr>
+      <tr class="good"><td><strong>tiny</strong></td><td><strong>17.0 KB</strong></td><td><strong>20 KB</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="good" style="font-size:0.65em;margin-top:0.7em">17 KB &mdash; beats the 20 KB benchmark</p>
+</section>
+
+<!-- 29 TRANSITION A: prev = tiny_pomodoro_pro -->
+<section class="center-slide">
+  <span class="impl-suffix"><span class="base">tiny_pomodoro_pro</span></span>
+</section>
+
+<!-- 30 TRANSITION B: suffix _plus -->
+<section class="center-slide">
+  <span class="impl-suffix">
+    <span class="base">tiny_pomodoro_pro</span><span class="new">_plus</span>
+  </span>
+</section>
+
+
+<!-- 31 TERMINAL C++ INTRO -->
+<section>
+  <h2><code>tiny_pomodoro_pro_plus</code></h2>
+  <p class="dim" style="font-size:0.7em;margin-bottom:0.6em">No X11, no ALSA &mdash; terminal only</p>
+  <ul class="flag-list">
+    <li>pthread &nbsp; <span class="desc">(std::thread)</span></li>
+  </ul>
+  <ul style="margin-top:0.8em; font-size:0.8em">
+    <li>ANSI escape codes for rendering</li>
+    <li>termios raw mode for keyboard input</li>
+    <li>Terminal bell <code>\a</code> for audio</li>
+  </ul>
+</section>
+
+<!-- 32 TERMINAL C++ CODE 1 -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus</code> &mdash; raw terminal</h3>
+<pre><code class="language-cpp" data-trim>
+static termios g_orig_termios;
+
+static void restore_terminal() {
+    tcsetattr(STDIN_FILENO, TCSANOW, &amp;g_orig_termios);
+    std::fputs("\033[?25h\033[0m\n", stdout);
+    std::fflush(stdout);
+}
+
+static void setup_raw_terminal() {
+    tcgetattr(STDIN_FILENO, &amp;g_orig_termios);
+    std::atexit(restore_terminal);
+
+    termios raw      = g_orig_termios;
+    raw.c_lflag     &amp;= ~static_cast&lt;tcflag_t&gt;(ICANON | ECHO);
+    raw.c_cc[VMIN]   = 0;
+    raw.c_cc[VTIME]  = 0;  // non-blocking read
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &amp;raw);
+    std::fputs("\033[?25l", stdout);  // hide cursor
+}
+</code></pre>
+</section>
+
+<!-- 33 TERMINAL C++ CODE 2 -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus</code> &mdash; render</h3>
+<pre><code class="language-cpp" data-trim>
+static void render(const Timer&amp; t, int sess, int pomodoros,
+                   int focus_min, int short_min, int long_min) {
+    std::fputs("\033[H", stdout);  // home cursor — no clear, no flicker
+
+    std::fputs("\033[1m┌─────────────────────────────────┐\033[0m\n", stdout);
+    std::printf("\033[1m│  %-20s        #%-3d  │\033[0m\n",
+                SESSION_NAMES[sess], pomodoros);
+    std::printf("\033[1m│         \033[32m%02d:%02d\033[0m\033[1m"
+                "                    │\033[0m\n",
+                t.seconds_left() / 60, t.seconds_left() % 60);
+
+    const char* dot    = t.is_running() ? "\033[32m●\033[0m\033[1m"
+                                        : "\033[33m■\033[0m\033[1m";
+    const char* status = t.is_running() ? "Running" : "Paused ";
+    std::printf("\033[1m│         %s %s                │\033[0m\n", dot, status);
+
+    std::fputs("\033[1m├─────────────────────────────────┤\033[0m\n", stdout);
+    std::printf("\033[1m│  Focus \033[0m%-3d\033[1m  Short \033[0m%-3d"
+                "\033[1m  Long \033[0m%-3d\033[1m  │\033[0m\n",
+                focus_min, short_min, long_min);
+    std::fputs("\033[1m└─────────────────────────────────┘\033[0m\n", stdout);
+    std::fflush(stdout);
+}
+</code></pre>
+</section>
+
+<!-- 34 TERMINAL C++ CODE 3 -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus</code> &mdash; main loop</h3>
+<pre><code class="language-cpp" data-trim>
+while (true) {
+    char c = 0;
+    if (read(STDIN_FILENO, &amp;c, 1) == 1) {
+        switch (c) {
+            case 's': case 'S':
+                if (timer.is_running()) timer.pause(); else timer.start();
+                break;
+            case 'r': case 'R': timer.reset();                               break;
+            case 'f': focus_min = std::max(1,   focus_min - 1);              break;
+            case 'F': focus_min = std::min(240, focus_min + 1);              break;
+            case 'b': short_min = std::max(1,   short_min - 1);              break;
+            case 'B': short_min = std::min(120, short_min + 1);              break;
+            case 'l': long_min  = std::max(1,   long_min  - 1);              break;
+            case 'L': long_min  = std::min(240, long_min  + 1);              break;
+            case 'q': case '\x1b': restore_terminal(); return 0;
+        }
+    }
+    if (was_running &amp;&amp; !timer.is_running() &amp;&amp; timer.seconds_left() == 0)
+        advance_session();
+    was_running = timer.is_running();
+    render(timer, session, pomodoro_count, focus_min, short_min, long_min);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+}
+</code></pre>
+</section>
+
+<!-- 35 TERMINAL C++ BUILD SIZES -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus</code> &mdash; build sizes</h3>
+  <table>
+    <thead><tr><th>Build</th><th>File size</th><th>Disk usage</th></tr></thead>
+    <tbody>
+      <tr><td>debug</td>     <td>120 KB</td>   <td>124 KB</td></tr>
+      <tr><td>debugasan</td> <td>3.0 MB</td>   <td>3.1 MB</td></tr>
+      <tr><td>debugubsan</td><td>562 KB</td>   <td>564 KB</td></tr>
+      <tr><td>release</td>   <td>18.3 KB</td>  <td>20 KB</td></tr>
+      <tr class="great"><td><strong>tiny</strong></td><td><strong>9.5 KB</strong></td><td><strong>12 KB</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="great" style="font-size:0.65em;margin-top:0.7em">9.5 KB &mdash; half the size of the benchmark</p>
+</section>
+
+<!-- 36 TRANSITION A: prev = tiny_pomodoro_pro_plus -->
+<section class="center-slide">
+  <span class="impl-suffix"><span class="base">tiny_pomodoro_pro_plus</span></span>
+</section>
+
+<!-- 37 TRANSITION B: suffix _ultra -->
+<section class="center-slide">
+  <span class="impl-suffix">
+    <span class="base">tiny_pomodoro_pro_plus</span><span class="new">_ultra</span>
+  </span>
+</section>
+
+<!-- 38 ASSEMBLY INTRO -->
+<section>
+  <h2><code>tiny_pomodoro_pro_plus_ultra</code></h2>
+  <p class="dim" style="font-size:0.7em;margin-bottom:0.6em">Pure x86-64 NASM &mdash; no libc, no runtime</p>
+  <ul class="flag-list">
+    <li><code>ld -nostdlib -static -s</code></li>
+    <li>nasm <code>-Ox</code> &nbsp; <span class="desc">multi-pass optimizer for shortest encodings</span></li>
+  </ul>
+  <ul style="margin-top:0.8em; font-size:0.8em">
+    <li>Raw Linux syscalls only</li>
+    <li><code>clone()</code> syscall for timer thread</li>
+    <li>Manual integer formatting &mdash; no printf</li>
+  </ul>
+</section>
+
+<!-- 39 ASSEMBLY CODE 1 -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; syscalls &amp; state</h3>
+<pre><code class="language-x86asm" data-trim>
+%define SYS_read       0
+%define SYS_write      1
+%define SYS_exit       60
+%define SYS_nanosleep  35
+%define SYS_clone      56
+%define SYS_ioctl      16
+
+%define THREAD_FLAGS (CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM)
+
+section .bss
+    orig_termios:  resb 60          ; struct termios on Linux x86-64
+    g_state:       resd 1           ; STATE_STOPPED / RUNNING / PAUSED
+    g_remaining:   resd 1           ; seconds left
+    g_initial:     resd 1           ; session total seconds
+    g_session:     resd 1           ; 0=Focus  1=Short  2=Long
+    g_pomodoros:   resd 1
+    g_focus_min:   resd 1
+    g_short_min:   resd 1
+    g_long_min:    resd 1
+    itoa_buf:      resb 16          ; scratch for number formatting
+    thread_stack:  resb (1024*1024) ; 1 MiB thread stack
+</code></pre>
+</section>
+
+<!-- 40 ASSEMBLY CODE 2 -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; countdown thread</h3>
+<pre><code class="language-x86asm" data-trim>
+countdown_thread:
+.loop:
+    cmp dword [rel g_stop_thread], 1
+    je  .exit
+    cmp dword [rel g_state], STATE_RUNNING
+    jne .sleep_short
+
+    lea rdi, [rel ts_1s]          ; sleep 1 second
+    xor rsi, rsi
+    mov rax, SYS_nanosleep
+    syscall
+
+    cmp dword [rel g_state], STATE_RUNNING
+    jne .loop
+    mov eax, [rel g_remaining]
+    test eax, eax
+    jz  .loop
+    dec eax
+    mov [rel g_remaining], eax
+    jnz .loop
+    mov dword [rel g_state], STATE_STOPPED
+    jmp .loop
+
+.sleep_short:
+    lea rdi, [rel ts_100ms]       ; sleep 100 ms when paused/stopped
+    xor rsi, rsi
+    mov rax, SYS_nanosleep
+    syscall
+    jmp .loop
+
+.exit:
+    mov rax, SYS_exit
+    xor rdi, rdi
+    syscall
+</code></pre>
+</section>
+
+<!-- 41 ASSEMBLY CODE 3 -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; itoa &amp; terminal</h3>
+<pre><code class="language-x86asm" data-trim>
+; convert integer in edi to decimal string in itoa_buf
+itoa:
+    test edi, edi
+    jnz  .nonzero
+    lea  rdi, [rel itoa_buf]
+    mov  byte [rdi], '0'
+    mov  byte [rdi+1], 0
+    ret
+.nonzero:
+    lea  rbx, [rel itoa_buf + 14]
+    mov  byte [rbx], 0
+    dec  rbx
+.div_loop:
+    xor  edx, edx
+    mov  ecx, 10
+    div  ecx                      ; eax = quotient, edx = remainder
+    add  dl, '0'
+    mov  [rbx], dl
+    dec  rbx
+    test eax, eax
+    jnz  .div_loop
+
+setup_raw_terminal:
+    mov rax, SYS_ioctl
+    xor rdi, rdi                  ; stdin
+    mov rsi, TCGETS
+    lea rdx, [rel orig_termios]
+    syscall
+    lea rdi, [rel raw_termios]
+    mov eax, [rdi + 12]           ; c_lflag at offset 12
+    and eax, ~(ICANON | ECHO)
+    mov [rdi + 12], eax
+    mov rax, SYS_ioctl
+    xor rdi, rdi
+    mov rsi, TCSETS
+    lea rdx, [rel raw_termios]
+    syscall
+    ret
+</code></pre>
+</section>
+
+<!-- 42 ASSEMBLY TINY FLAGS -->
+<section>
+  <h2><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; tiny flags</h2>
+  <ul class="flag-list" style="margin-bottom:0.8em">
+    <li><code>nasm -Ox</code> <span class="desc">&mdash; multi-pass optimizer for shortest encodings</span></li>
+  </ul>
+  <ul class="flag-list">
+    <li><code>ld -nostdlib -static -s</code> <span class="desc">&mdash; <code>-s</code> strips the symbol table</span></li>
+  </ul>
+</section>
+
+<!-- 43 ASSEMBLY BUILD SIZES -->
+<section>
+  <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; build sizes</h3>
+  <table>
+    <thead><tr><th>Build</th><th>File size</th><th>Disk usage</th></tr></thead>
+    <tbody>
+      <tr><td>debug</td>     <td>12.7 KB</td><td>16 KB</td></tr>
+      <tr><td>debugasan</td> <td>12.7 KB</td><td>16 KB</td></tr>
+      <tr><td>debugubsan</td><td>12.7 KB</td><td>16 KB</td></tr>
+      <tr><td>release</td>   <td>12.7 KB</td><td>16 KB</td></tr>
+      <tr class="great"><td><strong>tiny</strong></td><td><strong>8.8 KB</strong></td><td><strong>12 KB</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="good" style="font-size:0.65em;margin-top:0.7em">Tiny build strips the symbol table &mdash; saves ~4 KB</p>
+</section>
+
+<!-- 44 GRAND SUMMARY TABLE -->
+<section>
+  <h2>All Build Sizes</h2>
+  <table style="font-size:0.50em">
+    <thead>
+      <tr>
+        <th style="text-align:left">Binary</th>
+        <th>debug</th><th>debugasan</th><th>debugubsan</th><th>release</th><th>tiny</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:left;font-family:monospace">tiny_pomodoro</td>
+        <td>1.2 MB</td><td>4.1 MB</td><td>1.6 MB</td><td>1.1 MB</td>
+        <td class="good">831 KB</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-family:monospace">tiny_pomodoro_pro</td>
+        <td>245 KB</td><td>3.2 MB</td><td>749 KB</td><td>33.8 KB</td>
+        <td class="good">17 KB</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-family:monospace">tiny_pomodoro_pro_plus</td>
+        <td>120 KB</td><td>3.0 MB</td><td>562 KB</td><td>18.3 KB</td>
+        <td class="great">9.5 KB</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-family:monospace">tiny_pomodoro_pro_plus_ultra</td>
+        <td>12.7 KB</td><td>12.7 KB</td><td>12.7 KB</td><td>12.7 KB</td>
+        <td class="great">8.8 KB</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="dim" style="font-size:0.55em;margin-top:0.6em">
+    Benchmark: ChatGPT HTML/CSS/JS &mdash; <span class="ref">20 KB</span>
+  </p>
+</section>
+
+<!-- 45 CLOSING -->
+<section class="center-slide">
+  <h2>The more effort you put in,<br/>the better the result.</h2>
+  <table class="summary-table" style="font-size:0.62em;margin-top:1em">
+    <tbody>
+      <tr><td>Software Manager</td>              <td class="warn">~3 GB</td></tr>
+      <tr><td>ChatGPT HTML/JS</td>               <td class="ref">20 KB</td></tr>
+      <tr><td>tiny_pomodoro (FLTK)</td>          <td style="color:#e5c07b">831 KB</td></tr>
+      <tr><td>tiny_pomodoro_pro (X11)</td>       <td class="good">17 KB</td></tr>
+      <tr><td>tiny_pomodoro_pro_plus</td>        <td class="great">9.5 KB</td></tr>
+      <tr><td>tiny_pomodoro_pro_plus_ultra</td>  <td class="great"><strong>8.8 KB</strong></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 46 ABOUT ME -->
+<section>
+  <h2>About Me</h2>
+  <ul>
+    <li>Full-time software engineer <span class="dim">(Rust)</span></li>
+    <li>Studying to become a teacher</li>
+    <li>Volunteering at the children's shelter</li>
+    <li>C++ Prague/CPP Serbia</li>
+  </ul>
+</section>
+
+</div><!-- /slides -->
+</div><!-- /reveal -->
+
+<script src="reveal.js/dist/reveal.js"></script>
+<script src="reveal.js/dist/plugin/notes.js"></script>
+<script src="reveal.js/dist/plugin/highlight.js"></script>
+<script>
+  function showPlaceholder(img, path) {
+    var d = document.createElement('div');
+    d.className = 'img-placeholder';
+    d.textContent = '[ ' + path + ' ]';
+    img.replaceWith(d);
+  }
+
+  Reveal.initialize({
+    hash:            true,
+    center:          true,
+    slideNumber:     'c/t',
+    transition:      'slide',
+    transitionSpeed: 'fast',
+    plugins: [ RevealHighlight, RevealNotes ]
+  });
+</script>
+</body>
+</html>
