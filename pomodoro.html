@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pomodoro Timer</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #111a2e;
+      --text: #e8eefc;
+      --muted: #a9b5d1;
+      --accent: #5aa7ff;
+      --danger: #ff5a7a;
+      --ok: #35d07f;
+      --border: rgba(255,255,255,0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(1200px 700px at 20% 10%, rgba(90,167,255,0.18), transparent 55%),
+                  radial-gradient(1000px 600px at 85% 75%, rgba(53,208,127,0.12), transparent 60%),
+                  var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      padding: 24px;
+    }
+    .app {
+      width: min(720px, 100%);
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), transparent 65%), var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.35);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.4px;
+    }
+    .mode {
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+    }
+    @media (max-width: 780px) {
+      .main { grid-template-columns: 1fr; }
+    }
+
+    .timerCard, .settingsCard {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      background: rgba(0,0,0,0.12);
+    }
+
+    .time {
+      font-variant-numeric: tabular-nums;
+      font-size: 64px;
+      text-align: center;
+      margin: 8px 0 10px;
+      letter-spacing: 1px;
+    }
+    .progressWrap {
+      height: 10px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .progress {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), rgba(90,167,255,0.45));
+      border-radius: 999px;
+      transition: width 0.25s linear;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: transform 0.04s ease, background 0.15s ease, border-color 0.15s ease;
+      user-select: none;
+    }
+    button:hover { background: rgba(255,255,255,0.10); }
+    button:active { transform: translateY(1px); }
+    .primary {
+      border-color: rgba(90,167,255,0.35);
+      background: rgba(90,167,255,0.14);
+    }
+    .danger {
+      border-color: rgba(255,90,122,0.35);
+      background: rgba(255,90,122,0.12);
+    }
+
+    .stats {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .statBox {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(255,255,255,0.03);
+    }
+    .statBox b { color: var(--text); }
+
+    .settingsCard h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      margin: 10px 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input[type="number"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      outline: none;
+    }
+    input[type="checkbox"] { transform: translateY(1px); }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      opacity: 0.95;
+    }
+    .linkBtn {
+      padding: 8px 10px;
+      font-size: 12px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Pomodoro</h1>
+      <div class="mode">
+        <span class="pill" id="modePill">Focus</span>
+        <span class="pill">Session <span id="sessionCount">0</span></span>
+      </div>
+    </header>
+
+    <div class="main">
+      <section class="timerCard">
+        <div class="time" id="timeDisplay">25:00</div>
+        <div class="progressWrap" aria-label="Progress">
+          <div class="progress" id="progressBar"></div>
+        </div>
+
+        <div class="buttons">
+          <button class="primary" id="startPauseBtn">Start</button>
+          <button id="skipBtn">Skip</button>
+          <button class="danger" id="resetBtn">Reset</button>
+        </div>
+
+        <div class="stats">
+          <div class="statBox">Current: <b id="currentLabel">Focus</b></div>
+          <div class="statBox">Next: <b id="nextLabel">Short Break</b></div>
+          <div class="statBox">Focus done: <b id="focusDone">0</b></div>
+          <div class="statBox">Long break every: <b id="longEveryLabel">4</b></div>
+        </div>
+
+        <div class="hint">
+          Tip: change settings anytime. If the timer is running, new durations apply on the next phase (unless you hit Reset).
+        </div>
+      </section>
+
+      <aside class="settingsCard">
+        <h2>Settings</h2>
+
+        <label>
+          Focus minutes
+          <input type="number" id="focusMin" min="1" max="180" step="1" />
+        </label>
+
+        <label>
+          Short break minutes
+          <input type="number" id="shortMin" min="1" max="60" step="1" />
+        </label>
+
+        <label>
+          Long break minutes
+          <input type="number" id="longMin" min="1" max="120" step="1" />
+        </label>
+
+        <label>
+          Long break after how many focus sessions?
+          <input type="number" id="longEvery" min="2" max="20" step="1" />
+        </label>
+
+        <div class="row" style="margin-top: 10px;">
+          <label style="margin:0; display:flex; gap:10px; align-items:center;">
+            <input type="checkbox" id="autoStart" />
+            Auto-start next phase
+          </label>
+        </div>
+
+        <div class="row" style="margin-top: 10px;">
+          <label style="margin:0; display:flex; gap:10px; align-items:center;">
+            <input type="checkbox" id="notify" />
+            Desktop notifications
+          </label>
+          <button class="linkBtn" id="requestNotifyBtn">Allow</button>
+        </div>
+
+        <div class="row" style="margin-top: 10px;">
+          <label style="margin:0; display:flex; gap:10px; align-items:center;">
+            <input type="checkbox" id="sound" />
+            Sound on phase change
+          </label>
+          <button class="linkBtn" id="testSoundBtn">Test</button>
+        </div>
+
+        <div class="buttons" style="justify-content: stretch;">
+          <button id="saveBtn" class="primary" style="flex:1;">Save settings</button>
+          <button id="defaultsBtn" style="flex:1;">Defaults</button>
+        </div>
+
+        <div class="small" style="margin-top:10px;">
+          Saved to your browser (localStorage).
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    // --------- State ----------
+    const Modes = Object.freeze({
+      FOCUS: "focus",
+      SHORT: "short_break",
+      LONG: "long_break",
+    });
+
+    const defaultSettings = {
+      focusMin: 25,
+      shortMin: 5,
+      longMin: 15,
+      longEvery: 4,
+      autoStart: false,
+      notify: false,
+      sound: true,
+    };
+
+    const storageKey = "pomodoro_settings_v1";
+
+    let settings = loadSettings();
+    let mode = Modes.FOCUS;
+    let isRunning = false;
+    let intervalId = null;
+
+    let focusCompleted = 0;   // number of focus sessions completed
+    let sessionNumber = 0;    // increments each phase change (for display)
+    let remainingSeconds = settings.focusMin * 60;
+    let totalSecondsThisPhase = remainingSeconds;
+
+    // --------- Elements ----------
+    const timeDisplay = document.getElementById("timeDisplay");
+    const progressBar = document.getElementById("progressBar");
+    const modePill = document.getElementById("modePill");
+    const startPauseBtn = document.getElementById("startPauseBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const skipBtn = document.getElementById("skipBtn");
+
+    const currentLabel = document.getElementById("currentLabel");
+    const nextLabel = document.getElementById("nextLabel");
+    const focusDoneEl = document.getElementById("focusDone");
+    const longEveryLabel = document.getElementById("longEveryLabel");
+    const sessionCountEl = document.getElementById("sessionCount");
+
+    const focusMinInput = document.getElementById("focusMin");
+    const shortMinInput = document.getElementById("shortMin");
+    const longMinInput = document.getElementById("longMin");
+    const longEveryInput = document.getElementById("longEvery");
+
+    const autoStartInput = document.getElementById("autoStart");
+    const notifyInput = document.getElementById("notify");
+    const soundInput = document.getElementById("sound");
+
+    const requestNotifyBtn = document.getElementById("requestNotifyBtn");
+    const testSoundBtn = document.getElementById("testSoundBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const defaultsBtn = document.getElementById("defaultsBtn");
+
+    // --------- Init UI ----------
+    syncInputsFromSettings();
+    updateAllUI();
+
+    // --------- Events ----------
+    startPauseBtn.addEventListener("click", () => {
+      if (isRunning) pause();
+      else start();
+    });
+
+    resetBtn.addEventListener("click", () => resetTimer(true));
+    skipBtn.addEventListener("click", () => finishPhase(true));
+
+    saveBtn.addEventListener("click", () => {
+      const newSettings = readSettingsFromInputs();
+      settings = newSettings;
+      saveSettings(settings);
+
+      // reflect changes in labels immediately
+      longEveryLabel.textContent = settings.longEvery;
+
+      // If not running, reset current phase length to updated value
+      if (!isRunning) resetTimer(false);
+
+      updateNextLabel();
+    });
+
+    defaultsBtn.addEventListener("click", () => {
+      settings = { ...defaultSettings };
+      saveSettings(settings);
+      syncInputsFromSettings();
+      if (!isRunning) resetTimer(false);
+      updateAllUI();
+    });
+
+    requestNotifyBtn.addEventListener("click", async () => {
+      if (!("Notification" in window)) {
+        alert("Notifications are not supported in this browser.");
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") {
+        notifyInput.checked = true;
+        settings.notify = true;
+        saveSettings(settings);
+      } else {
+        notifyInput.checked = false;
+        settings.notify = false;
+        saveSettings(settings);
+      }
+    });
+
+    testSoundBtn.addEventListener("click", () => {
+      playBeep();
+    });
+
+    notifyInput.addEventListener("change", () => {
+      settings.notify = notifyInput.checked;
+      saveSettings(settings);
+    });
+    soundInput.addEventListener("change", () => {
+      settings.sound = soundInput.checked;
+      saveSettings(settings);
+    });
+    autoStartInput.addEventListener("change", () => {
+      settings.autoStart = autoStartInput.checked;
+      saveSettings(settings);
+    });
+
+    // --------- Timer functions ----------
+    function start() {
+      if (isRunning) return;
+      isRunning = true;
+      startPauseBtn.textContent = "Pause";
+
+      // Use a "tick" that corrects drift using timestamps
+      const startTime = Date.now();
+      const startRemaining = remainingSeconds;
+
+      intervalId = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const nextRemaining = startRemaining - elapsed;
+
+        remainingSeconds = Math.max(0, nextRemaining);
+        updateTimerUI();
+
+        if (remainingSeconds <= 0) {
+          finishPhase(false);
+        }
+      }, 250);
+    }
+
+    function pause() {
+      if (!isRunning) return;
+      isRunning = false;
+      startPauseBtn.textContent = "Start";
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+
+    function resetTimer(resetCounts) {
+      pause();
+      if (resetCounts) {
+        focusCompleted = 0;
+        sessionNumber = 0;
+        mode = Modes.FOCUS;
+      }
+      remainingSeconds = getDurationForMode(mode);
+      totalSecondsThisPhase = remainingSeconds;
+      updateAllUI();
+      document.title = "Pomodoro Timer";
+    }
+
+    function finishPhase(userSkipped) {
+      // Stop current interval
+      pause();
+
+      // Mark completion if focus ended naturally or skipped while in focus
+      if (mode === Modes.FOCUS) {
+        // Completing focus session counts even if skipped
+        focusCompleted += 1;
+        focusDoneEl.textContent = focusCompleted;
+      }
+
+      sessionNumber += 1;
+      sessionCountEl.textContent = sessionNumber;
+
+      // Phase change
+      const prevMode = mode;
+      mode = getNextMode(prevMode);
+
+      // Load duration
+      remainingSeconds = getDurationForMode(mode);
+      totalSecondsThisPhase = remainingSeconds;
+
+      // Alerts
+      const msg = phaseMessage(prevMode, mode, userSkipped);
+      if (settings.sound) playBeep();
+      if (settings.notify) sendNotification(msg);
+
+      updateAllUI();
+
+      if (settings.autoStart) start();
+    }
+
+    function getNextMode(current) {
+      if (current === Modes.FOCUS) {
+        // After Nth focus, take long break; otherwise short break
+        if (focusCompleted % settings.longEvery === 0) return Modes.LONG;
+        return Modes.SHORT;
+      }
+      // After any break, go back to focus
+      return Modes.FOCUS;
+    }
+
+    function getDurationForMode(m) {
+      if (m === Modes.FOCUS) return Math.max(1, settings.focusMin) * 60;
+      if (m === Modes.SHORT) return Math.max(1, settings.shortMin) * 60;
+      return Math.max(1, settings.longMin) * 60;
+    }
+
+    // --------- UI helpers ----------
+    function updateAllUI() {
+      modePill.textContent = modeLabel(mode);
+      currentLabel.textContent = modeLabel(mode);
+      longEveryLabel.textContent = settings.longEvery;
+      focusDoneEl.textContent = focusCompleted;
+      sessionCountEl.textContent = sessionNumber;
+      updateTimerUI();
+      updateNextLabel();
+    }
+
+    function updateTimerUI() {
+      timeDisplay.textContent = formatTime(remainingSeconds);
+
+      const done = totalSecondsThisPhase - remainingSeconds;
+      const pct = totalSecondsThisPhase > 0 ? (done / totalSecondsThisPhase) * 100 : 0;
+      progressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+
+      // Title shows remaining and mode
+      document.title = `${formatTime(remainingSeconds)} • ${modeLabel(mode)}`;
+
+      // When paused, keep pill same, button text already handled by start/pause
+      // When finished (0), title will be updated after phase change
+    }
+
+    function updateNextLabel() {
+      const upcoming = getNextMode(mode);
+      nextLabel.textContent = modeLabel(upcoming);
+    }
+
+    function modeLabel(m) {
+      if (m === Modes.FOCUS) return "Focus";
+      if (m === Modes.SHORT) return "Short Break";
+      return "Long Break";
+    }
+
+    function formatTime(totalSec) {
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function phaseMessage(prev, next, skipped) {
+      const a = modeLabel(prev);
+      const b = modeLabel(next);
+      return skipped ? `Skipped: ${a} → ${b}` : `Time! ${a} finished → ${b}`;
+    }
+
+    // --------- Settings persistence ----------
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return { ...defaultSettings };
+        const parsed = JSON.parse(raw);
+
+        // Merge with defaults to avoid missing keys
+        return {
+          ...defaultSettings,
+          ...parsed,
+          // sanitize numbers
+          focusMin: clampInt(parsed.focusMin, 1, 180, defaultSettings.focusMin),
+          shortMin: clampInt(parsed.shortMin, 1, 60, defaultSettings.shortMin),
+          longMin: clampInt(parsed.longMin, 1, 120, defaultSettings.longMin),
+          longEvery: clampInt(parsed.longEvery, 2, 20, defaultSettings.longEvery),
+          autoStart: !!parsed.autoStart,
+          notify: !!parsed.notify,
+          sound: parsed.sound !== undefined ? !!parsed.sound : defaultSettings.sound,
+        };
+      } catch {
+        return { ...defaultSettings };
+      }
+    }
+
+    function saveSettings(s) {
+      localStorage.setItem(storageKey, JSON.stringify(s));
+    }
+
+    function syncInputsFromSettings() {
+      focusMinInput.value = settings.focusMin;
+      shortMinInput.value = settings.shortMin;
+      longMinInput.value = settings.longMin;
+      longEveryInput.value = settings.longEvery;
+
+      autoStartInput.checked = settings.autoStart;
+      notifyInput.checked = settings.notify;
+      soundInput.checked = settings.sound;
+    }
+
+    function readSettingsFromInputs() {
+      const f = clampInt(focusMinInput.value, 1, 180, defaultSettings.focusMin);
+      const sh = clampInt(shortMinInput.value, 1, 60, defaultSettings.shortMin);
+      const lo = clampInt(longMinInput.value, 1, 120, defaultSettings.longMin);
+      const le = clampInt(longEveryInput.value, 2, 20, defaultSettings.longEvery);
+
+      // write sanitized values back to inputs
+      focusMinInput.value = f;
+      shortMinInput.value = sh;
+      longMinInput.value = lo;
+      longEveryInput.value = le;
+
+      return {
+        focusMin: f,
+        shortMin: sh,
+        longMin: lo,
+        longEvery: le,
+        autoStart: autoStartInput.checked,
+        notify: notifyInput.checked,
+        sound: soundInput.checked,
+      };
+    }
+
+    function clampInt(val, min, max, fallback) {
+      const n = Number.parseInt(val, 10);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.min(max, Math.max(min, n));
+    }
+
+    // --------- Notifications ----------
+    function sendNotification(text) {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+      try {
+        new Notification("Pomodoro", { body: text });
+      } catch {
+        // ignored
+      }
+    }
+
+    // --------- Beep (no external files) ----------
+    function playBeep() {
+      // WebAudio: quick, simple beep
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      const ctx = new AudioCtx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+
+      o.type = "sine";
+      o.frequency.value = 880;
+
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+
+      o.connect(g);
+      g.connect(ctx.destination);
+
+      o.start();
+      o.stop(ctx.currentTime + 0.28);
+
+      o.onended = () => ctx.close().catch(() => {});
+    }
+  </script>
+</body>
+</html>
