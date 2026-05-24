@@ -82,7 +82,7 @@ build/
     tiny_pomodoro_pro              ← raw X11 build
     tiny_pomodoro_pro_plus         ← terminal-only C++ build
     tiny_pomodoro_pro_plus_ultra   ← terminal-only assembly build
-    sounds/beep.wav                ← copied by build_all.sh
+    sounds/beep.wav                ← copied from assets/ by build_all.sh
   release/
     tiny_pomodoro
     tiny_pomodoro_pro
@@ -92,9 +92,38 @@ build/
   debug/   debugasan/   debugubsan/   (same structure)
 ```
 
+## Installation
+
+Requires `sudo`. Installs binaries, sound, icons and `.desktop` launcher files to
+the standard XDG/FHS locations under `/usr/local` (override with `PREFIX=...`).
+
+```bash
+sudo make install-tiny       # install the Tiny (smallest) build
+sudo make install-release    # install the Release (fastest) build
+```
+
+Or equivalently:
+
+```bash
+sudo cmake --install build/tiny --prefix /usr/local
+```
+
+What gets installed:
+
+| Asset | Destination |
+|-------|-------------|
+| Binaries | `/usr/local/bin/` |
+| Sound | `/usr/local/share/sounds/tiny_pomodoro/beep.wav` |
+| Icons | `/usr/local/share/icons/hicolor/512x512/apps/` |
+| Launchers | `/usr/local/share/applications/` |
+
 ## Custom Sound
 
-Place a PCM WAV file named `beep.wav` in the project root before running `build_all.sh`. It will be copied automatically to `build/<type>/sounds/beep.wav`. If the file is absent or invalid, a synthesised 880 Hz beep is played instead.
+Place a PCM WAV file named `beep.wav` in `assets/` before running `build_all.sh`.
+It will be copied automatically to `build/<type>/sounds/beep.wav` (used when running
+from the build tree) and installed to `/usr/local/share/sounds/tiny_pomodoro/beep.wav`
+by `make install-*`. If the file is absent or invalid, a synthesised 880 Hz beep
+is played instead.
 
 ## Size Optimization Techniques Demonstrated
 
@@ -114,3 +143,7 @@ Place a PCM WAV file named `beep.wav` in the project root before running `build_
 ## Notes
 
 Targets Linux only. No cross-platform compatibility is intended.
+
+## Attribution
+
+<a href="https://www.flaticon.com/free-icons/pomodoro-technique" title="pomodoro technique icons">Pomodoro technique icons created by Freepik - Flaticon</a>
