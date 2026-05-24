@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tiny Pomodoro
+GenericName=Pomodoro Timer
+Comment=A minimal pomodoro timer (FLTK)
+Exec=tiny_pomodoro
+Icon=tiny_pomodoro
+Terminal=false
+Categories=Utility;
+Keywords=pomodoro;timer;productivity;focus;
+StartupWMClass=tiny_pomodoro
+

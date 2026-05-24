@@ -8,10 +8,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <linux/limits.h>
 #include <vector>
 #include <cstring>
-#include <unistd.h>
 #include <iostream>
 #include <thread>
 
@@ -110,15 +108,6 @@ static uint32_t wav_u32(FILE* f) {
     unsigned char b[4]; std::fread(b, 1, 4, f);
     return static_cast<uint32_t>(b[0] | (b[1]<<8) | (b[2]<<16) | (b[3]<<24));
 }
-static std::string exe_dir() {
-    char buf[PATH_MAX];
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n <= 0) return ".";
-    buf[n] = '\0';
-    char* slash = std::strrchr(buf, '/');
-    if (slash) *slash = '\0';
-    return std::string(buf);
-}
 // Play a WAV file; falls back to synthesised beep if the file can't be loaded
 static void play_wav(const char* path) {
     FILE* f = std::fopen(path, "rb");
@@ -194,6 +183,13 @@ int main() {
     XSelectInput(dpy, win, ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask);
     Atom wmDelete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, win, &wmDelete, 1);
+    XClassHint* class_hint = XAllocClassHint();
+    if (class_hint) {
+        class_hint->res_name  = const_cast<char*>("tiny_pomodoro_pro");
+        class_hint->res_class = const_cast<char*>("TinyPomodoroPro");
+        XSetClassHint(dpy, win, class_hint);
+        XFree(class_hint);
+    }
     XMapWindow(dpy, win);
 
     GC gc = XCreateGC(dpy, win, 0, nullptr);
@@ -296,7 +292,7 @@ int main() {
 
     auto advance_session = [&]() {
         XBell(dpy, 100);
-        play_wav((exe_dir() + "/sounds/beep.wav").c_str());
+        play_wav(SOUND_PATH);
         if (session == Focus) {
             pomodoro_count++;
             if (pomodoro_count % 4 == 0) {

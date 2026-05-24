@@ -4,6 +4,9 @@ set(CMAKE_CXX_COMPILER "/usr/bin/clang++-20")
 
 project(tiny_pomodoro CXX)
 
+# XDG/FHS install paths
+include(GNUInstallDirs)
+
 # C++ Standard and libc++
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -120,7 +123,45 @@ if(CMAKE_BUILD_TYPE STREQUAL "DebugUBSAN")
     endforeach()
 endif()
 
-# Tiny build - minimal executable size
+# Sound path baked in at compile time so the installed binaries find the sound
+# file at its XDG location.  Falls back to the synthesised beep if the file is
+# absent (e.g. when running directly from the build tree during development).
+target_compile_definitions(tiny_pomodoro PRIVATE
+    SOUND_PATH="${CMAKE_INSTALL_FULL_DATADIR}/sounds/tiny_pomodoro/beep.wav"
+)
+target_compile_definitions(tiny_pomodoro_pro PRIVATE
+    SOUND_PATH="${CMAKE_INSTALL_FULL_DATADIR}/sounds/tiny_pomodoro/beep.wav"
+)
+
+# ── Install rules ────────────────────────────────────────────────────────────
+
+# Binaries
+install(TARGETS
+    tiny_pomodoro
+    tiny_pomodoro_pro
+    tiny_pomodoro_pro_plus
+    tiny_pomodoro_pro_plus_ultra
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# Shared sound
+install(FILES assets/beep.wav
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/sounds/tiny_pomodoro
+)
+
+# .desktop launcher files
+install(FILES
+    assets/tiny_pomodoro.desktop
+    assets/tiny_pomodoro_pro.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+)
+
+# Icons
+install(FILES
+    assets/tiny_pomodoro.png
+    assets/tiny_pomodoro_pro.png
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
+)
 if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
     set(CMAKE_ASM_NASM_FLAGS "-f elf64 -Ox")
     set(CMAKE_ASM_NASM_LINK_EXECUTABLE "ld -o <TARGET> <OBJECTS> -nostdlib -static -s")

@@ -45,16 +45,16 @@ for i in "${!pids[@]}"; do
 done
 
 # Copy beep.wav into each build/<type>/sounds/ directory
-if [[ -f "${ROOT_DIR}/beep.wav" ]]; then
+if [[ -f "${ROOT_DIR}/assets/beep.wav" ]]; then
     for type in "${BUILD_TYPES[@]}"; do
         lower=$(echo "$type" | tr '[:upper:]' '[:lower:]')
         sounds_dir="${ROOT_DIR}/build/${lower}/sounds"
         mkdir -p "${sounds_dir}"
-        cp "${ROOT_DIR}/beep.wav" "${sounds_dir}/beep.wav"
+        cp "${ROOT_DIR}/assets/beep.wav" "${sounds_dir}/beep.wav"
     done
     echo "Copied beep.wav to all build/<type>/sounds/ directories."
 else
-    echo "Warning: beep.wav not found in ${ROOT_DIR}, skipping sound copy."
+    echo "Warning: assets/beep.wav not found in ${ROOT_DIR}, skipping sound copy."
 fi
 
 exit $failed

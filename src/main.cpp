@@ -9,8 +9,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
-#include <string>
-#include <unistd.h>
 
 enum class Session { Focus, ShortBreak, LongBreak };
 
@@ -57,15 +55,6 @@ static uint16_t wav_u16(FILE* f) {
 static uint32_t wav_u32(FILE* f) {
     unsigned char b[4]; std::fread(b, 1, 4, f);
     return static_cast<uint32_t>(b[0] | (b[1]<<8) | (b[2]<<16) | (b[3]<<24));
-}
-static std::string exe_dir() {
-    char buf[PATH_MAX];
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n <= 0) return ".";
-    buf[n] = '\0';
-    char* slash = std::strrchr(buf, '/');
-    if (slash) *slash = '\0';
-    return std::string(buf);
 }
 // Play a WAV file; falls back to synthesised beep if the file can't be loaded
 static void play_wav(const char* path) {
@@ -177,7 +166,7 @@ static void tick_cb(void*) {
         Fl::add_timeout(1.0, tick_cb);
     } else {
         stop_timer();
-        play_wav((exe_dir() + "/sounds/beep.wav").c_str());
+        play_wav(SOUND_PATH);
         // advance to next session
         if (app.current == Session::Focus) {
             app.pomodoro_count++;
@@ -277,6 +266,7 @@ int main() {
     app.long_input->value("15");
 
     app.window->end();
+    app.window->xclass("tiny_pomodoro");
     app.window->show();
 
     reset_session(Session::Focus);

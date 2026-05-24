@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tiny Pomodoro Pro
+GenericName=Pomodoro Timer
+Comment=A minimal pomodoro timer (raw X11)
+Exec=tiny_pomodoro_pro
+Icon=tiny_pomodoro_pro
+Terminal=false
+Categories=Utility;
+Keywords=pomodoro;timer;productivity;focus;
+StartupWMClass=TinyPomodoroPro
+
