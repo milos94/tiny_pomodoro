@@ -81,6 +81,11 @@ add_executable(tiny_pomodoro_pro_plus_ultra
     src/main_pro_plus_ultra.asm
 )
 
+# Minimal assembly build: no UI, no input, no state — just timed bells.
+add_executable(tiny_pomodoro_2
+    src/main_2.asm
+)
+
 # Build type configurations
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Tiny)
@@ -141,6 +146,7 @@ install(TARGETS
     tiny_pomodoro_pro
     tiny_pomodoro_pro_plus
     tiny_pomodoro_pro_plus_ultra
+    tiny_pomodoro_2
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
