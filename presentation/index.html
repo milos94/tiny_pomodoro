@@ -62,6 +62,9 @@
       margin: 0.5em 0 0 0;
       padding: 0;
       font-family: monospace;
+      /* the black theme makes <ul> inline-block; force block so lists stack
+         vertically instead of sitting side by side */
+      display: block;
     }
 
     .flag-list li {
@@ -73,7 +76,7 @@
     }
 
     .flag-list li .desc {
-      color: #888;
+      color: #d6d6d6;
       font-family: sans-serif;
       font-size: 0.92em;
     }
@@ -111,7 +114,7 @@
     }
 
     .dim {
-      color: #888;
+      color: #d6d6d6;
     }
 
     .warn {
@@ -138,9 +141,13 @@
       max-width: 90%;
     }
 
-    .img-fill {
+    /* selector is deliberately specific: it must beat the theme's
+       `.reveal section img { margin: 15px 0 }` (which left-aligns) and
+       `.reveal img { max-height: 95% }`. max-height is in px, not vh, because vh
+       is viewport-relative and overflows the scaled slide on tall screens. */
+    .reveal section img.img-fill {
       max-width: 92%;
-      max-height: 72vh;
+      max-height: 600px;
       display: block;
       margin: 0 auto;
       border-radius: 4px;
@@ -187,17 +194,109 @@
       text-align: right;
       font-family: monospace;
     }
+
+    .yell {
+      color: #e5c07b;
+    }
+
+    /* stage pill — one per pipeline stage, coloured to match the diagrams */
+    .stage {
+      display: inline-block;
+      font-family: monospace;
+      font-size: 0.55em;
+      padding: 0.2em 0.7em;
+      border-radius: 3px;
+      border: 1px solid;
+      margin: 0 0.35em 0.5em 0;
+    }
+
+    /* per-stage colours, shared by the top pill (.stage) and the inline flag tag (.ftag) */
+    .stage.fe,
+    .ftag.fe {
+      color: #61dafb;
+      border-color: #61dafb;
+      background: rgba(97, 218, 251, 0.14);
+    }
+
+    .stage.opt,
+    .ftag.opt {
+      color: #c678dd;
+      border-color: #c678dd;
+      background: rgba(198, 120, 221, 0.14);
+    }
+
+    .stage.cg,
+    .ftag.cg {
+      color: #e8934a;
+      border-color: #e8934a;
+      background: rgba(232, 147, 74, 0.16);
+    }
+
+    .stage.ld,
+    .ftag.ld {
+      color: #4ec94e;
+      border-color: #4ec94e;
+      background: rgba(78, 201, 78, 0.14);
+    }
+
+    .stage.asm,
+    .ftag.asm {
+      color: #e5c07b;
+      border-color: #e5c07b;
+      background: rgba(229, 192, 123, 0.14);
+    }
+
+    /* inline stage tag, right-aligned inside a flag-list row */
+    .ftag {
+      float: right;
+      font-family: monospace;
+      font-size: 0.7em;
+      padding: 0.05em 0.5em;
+      border-radius: 3px;
+      border: 1px solid;
+      margin-left: 0.6em;
+    }
+
+    .reveal svg {
+      width: 100%;
+      height: auto;
+    }
+
+    .cluster-note {
+      font-size: 0.72em;
+      color: #e2e2e2;
+      margin-top: 0.7em;
+    }
+
+    .flag-list li.nop {
+      border-left-color: #555;
+      opacity: 0.6;
+    }
+
+    .flag-list li.hero {
+      border-left-color: #4ec94e;
+    }
   </style>
 </head>
 
 <body>
+  <!-- arrowhead marker, kept outside .slides: Reveal hides inactive sections and a
+       url(#…) reference into a hidden subtree may not resolve -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,1 L7,4 L0,7" fill="none" stroke="#777" stroke-width="1.4" />
+      </marker>
+    </defs>
+  </svg>
+
   <div class="reveal">
     <div class="slides">
 
       <!-- 1 TITLE -->
       <section class="center-slide">
         <h1>Building the tiniest<br />pomodoro app</h1>
-        <p style="margin-top:0.6em; font-size:0.6em; color:#888;">Anđelković, Miloš</p>
+        <p style="margin-top:0.6em; font-size:0.6em; color:#c8c8c8;">Anđelković, Miloš</p>
       </section>
 
       <!-- ABOUT ME -->
@@ -302,15 +401,6 @@
       <section>
         <h3><code>tiny_pomodoro</code> &mdash; app struct</h3>
         <pre><code class="language-cpp" data-trim>
-#include &lt;FL/Fl.H&gt;
-#include &lt;FL/Fl_Box.H&gt;
-#include &lt;FL/Fl_Button.H&gt;
-#include &lt;FL/Fl_Int_Input.H&gt;
-#include &lt;FL/Fl_Window.H&gt;
-#include &lt;alsa/asoundlib.h&gt;
-
-namespace {
-
 enum class Session { Focus, ShortBreak, LongBreak };
 
 struct PomodoroApp {
@@ -329,8 +419,6 @@ struct PomodoroApp {
 };
 
 PomodoroApp app;
-
-} // namespace
 </code></pre>
       </section>
 
@@ -339,36 +427,24 @@ PomodoroApp app;
         <h3><code>tiny_pomodoro</code> &mdash; widgets</h3>
         <pre><code class="language-cpp" data-trim>
 int main() {
-    // Stack-allocate: ~Fl_Window cascades to delete the child widgets.
-    Fl_Window window(320, 420, "Tiny Pomodoro");
+    Fl_Window window(320, 420, "Tiny Pomodoro");   // dtor frees children
     app.window = &amp;window;
-    app.window-&gt;color(FL_WHITE);
 
     app.session_label = new Fl_Box(0, 18, 320, 28, "Focus");
-    app.session_label-&gt;labelsize(15);
-    app.session_label-&gt;labelfont(FL_BOLD);
-
-    app.timer_label = new Fl_Box(0, 54, 320, 90, "25:00");
+    app.timer_label   = new Fl_Box(0, 54, 320, 90, "25:00");
     app.timer_label-&gt;labelsize(60);
-    app.timer_label-&gt;labelfont(FL_BOLD);
 
     auto* btn_focus = new Fl_Button( 14, 158, 88, 28, "Focus");
     auto* btn_short = new Fl_Button(116, 158, 88, 28, "Short Break");
-    auto* btn_long  = new Fl_Button(218, 158, 88, 28, "Long Break");
     btn_focus-&gt;callback(session_cb, &amp;s_focus);
     btn_short-&gt;callback(session_cb, &amp;s_short);
-    btn_long -&gt;callback(session_cb, &amp;s_long);
 
     app.start_stop_btn = new Fl_Button(110, 202, 100, 36, "Start");
     app.start_stop_btn-&gt;callback(start_stop_cb);
 
-    app.focus_input = new Fl_Int_Input(138, 288, 60, 24); app.focus_input-&gt;value("25");
-    app.short_input = new Fl_Int_Input(138, 322, 60, 24); app.short_input-&gt;value("5");
-    app.long_input  = new Fl_Int_Input(138, 356, 60, 24); app.long_input-&gt;value("15");
-
-    app.window-&gt;end();
-    app.window-&gt;show();
-    return Fl::run();   // children freed via window's dtor on return
+    window.end();
+    window.show();
+    return Fl::run();
 }
 </code></pre>
       </section>
@@ -385,15 +461,12 @@ void tick_cb(void*) {
         Fl::add_timeout(1.0, tick_cb);   // re-arm every second
         return;
     }
-
     stop_timer();
     play_wav(SOUND_PATH);
-
     if (app.current == Session::Focus) {
         ++app.pomodoro_count;
         reset_session(app.pomodoro_count % kLongBreakEvery == 0
-                          ? Session::LongBreak
-                          : Session::ShortBreak);
+                          ? Session::LongBreak : Session::ShortBreak);
     } else {
         reset_session(Session::Focus);
     }
@@ -401,6 +474,12 @@ void tick_cb(void*) {
     Fl::add_timeout(1.0, tick_cb);       // auto-start next session
 }
 </code></pre>
+      </section>
+
+      <!-- 14b FLTK SCREENSHOT -->
+      <section class="center-slide">
+        <img src="tiny_pomodoro.png" class="img-fill" alt="tiny_pomodoro — FLTK GUI"
+          onerror="showPlaceholder(this,'tiny_pomodoro.png')" />
       </section>
 
       <!-- 15 FLTK BUILD SIZES  (tiny excluded) -->
@@ -444,47 +523,335 @@ void tick_cb(void*) {
         <h2>The Tiny Build</h2>
         <ul>
           <li>Clang + LLD &mdash; size-first optimization</li>
-          <li>10 compiler flags</li>
-          <li>5 linker flags</li>
-          <li>Goal: smallest possible binary</li>
+          <li>10 compiler flags, 5 linker flags</li>
+          <li>Grouped by <strong>what they do</strong> &mdash; not by which tool eats them</li>
         </ul>
+        <p class="dim" style="font-size:0.68em;margin-top:0.8em">
+          But first: <em>where</em> in the build does a flag actually act?
+        </p>
       </section>
 
-      <!-- 17 COMPILER FLAGS 1/2 -->
+      <!-- 16a THE COMPILATION PIPELINE -->
       <section>
-        <h2>Compiler Flags &mdash; 1&thinsp;/&thinsp;2</h2>
-        <ul class="flag-list">
-          <li><code>-Oz</code> <span class="desc">&mdash; max size optimization (clang)</span></li>
-          <li><code>-ffunction-sections</code> <span class="desc">&mdash; one ELF section per function</span></li>
-          <li><code>-fdata-sections</code> <span class="desc">&mdash; one ELF section per data object</span></li>
-          <li><code>-fno-rtti</code> <span class="desc">&mdash; remove type-info tables</span></li>
-          <li><code>-fno-exceptions</code> <span class="desc">&mdash; remove exception handling</span></li>
-        </ul>
+        <h3>From <code>.cpp</code> to a running process</h3>
+        <svg viewBox="0 0 980 235">
+          <g>
+            <rect x="10" y="60" width="120" height="58" rx="5" fill="#2d4a63" stroke="#61dafb" />
+            <text x="70" y="84" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">front-end</text>
+            <text x="70" y="103" fill="#888" font-size="11" text-anchor="middle" font-family="monospace">parse →
+              AST</text>
+
+            <rect x="180" y="60" width="120" height="58" rx="5" fill="#2d4a63" stroke="#61dafb" />
+            <text x="240" y="84" fill="#e6e6e6" font-size="13" text-anchor="middle" font-family="monospace">IR
+              gen</text>
+            <text x="240" y="103" fill="#888" font-size="11" text-anchor="middle" font-family="monospace">AST → LLVM
+              IR</text>
+
+            <rect x="350" y="60" width="120" height="58" rx="5" fill="#3a3055" stroke="#c678dd" />
+            <text x="410" y="84" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">optimiser</text>
+            <text x="410" y="103" fill="#888" font-size="11" text-anchor="middle" font-family="monospace">IR → better
+              IR</text>
+
+            <rect x="520" y="60" width="120" height="58" rx="5" fill="#4a3520" stroke="#e8934a" />
+            <text x="580" y="84" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">codegen</text>
+            <text x="580" y="103" fill="#888" font-size="11" text-anchor="middle" font-family="monospace">IR →
+              machine</text>
+
+            <rect x="690" y="60" width="120" height="58" rx="5" fill="#243b2e" stroke="#4ec94e" />
+            <text x="750" y="84" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">linker</text>
+            <text x="750" y="103" fill="#888" font-size="11" text-anchor="middle" font-family="monospace">LLD</text>
+
+            <rect x="860" y="60" width="110" height="58" rx="5" fill="#4a3a25" stroke="#e5c07b" />
+            <text x="915" y="84" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">loader</text>
+            <text x="915" y="103" fill="#888" font-size="11" text-anchor="middle" font-family="monospace">kernel</text>
+          </g>
+          <g stroke="#777" stroke-width="1.6" marker-end="url(#ar)" fill="none">
+            <line x1="132" y1="89" x2="176" y2="89" />
+            <line x1="302" y1="89" x2="346" y2="89" />
+            <line x1="472" y1="89" x2="516" y2="89" />
+            <line x1="642" y1="89" x2="686" y2="89" />
+            <line x1="812" y1="89" x2="856" y2="89" />
+          </g>
+          <g font-size="12" text-anchor="middle" fill="#61dafb" font-family="monospace">
+            <text x="70" y="42">.cpp</text>
+            <text x="240" y="42">AST</text>
+            <text x="410" y="42">IR</text>
+            <text x="580" y="42">IR</text>
+            <text x="750" y="42">.o</text>
+            <text x="915" y="42">a.out</text>
+          </g>
+          <text x="490" y="165" fill="#e5c07b" font-size="15" text-anchor="middle">
+            Every one of the 15 flags fires at exactly ONE of these stages.
+          </text>
+        </svg>
       </section>
 
-      <!-- 18 COMPILER FLAGS 2/2 -->
+      <!-- 16b WHERE EACH FLAG FIRES -->
       <section>
-        <h2>Compiler Flags &mdash; 2&thinsp;/&thinsp;2</h2>
+        <h3>Where each flag fires</h3>
+        <svg viewBox="0 0 960 250">
+          <g>
+            <rect x="20" y="14" width="150" height="42" rx="5" fill="#2d4a63" stroke="#61dafb" />
+            <text x="95" y="40" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">front-end</text>
+            <rect x="200" y="14" width="150" height="42" rx="5" fill="#3a3055" stroke="#c678dd" />
+            <text x="275" y="40" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">optimiser</text>
+            <rect x="380" y="14" width="150" height="42" rx="5" fill="#4a3520" stroke="#e8934a" />
+            <text x="455" y="40" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">codegen</text>
+            <rect x="560" y="14" width="180" height="42" rx="5" fill="#243b2e" stroke="#4ec94e" />
+            <text x="650" y="40" fill="#e6e6e6" font-size="13" text-anchor="middle"
+              font-family="monospace">linker</text>
+            <rect x="770" y="14" width="170" height="42" rx="5" fill="#4a3a25" stroke="#e5c07b" />
+            <text x="855" y="40" fill="#e6e6e6" font-size="12" text-anchor="middle" font-family="monospace">assembler
+              (asm only)</text>
+          </g>
+          <g stroke="#555" stroke-width="1.2">
+            <line x1="95" y1="58" x2="95" y2="76" />
+            <line x1="275" y1="58" x2="275" y2="76" />
+            <line x1="455" y1="58" x2="455" y2="76" />
+            <line x1="650" y1="58" x2="650" y2="76" />
+            <line x1="855" y1="58" x2="855" y2="76" />
+          </g>
+          <g font-size="11" font-family="monospace">
+            <text x="95" y="94" fill="#61dafb" text-anchor="middle">-fno-exceptions</text>
+            <text x="95" y="112" fill="#61dafb" text-anchor="middle">-fno-rtti</text>
+
+            <text x="275" y="94" fill="#c678dd" text-anchor="middle">-Oz</text>
+            <text x="275" y="112" fill="#c678dd" text-anchor="middle">-flto=thin</text>
+            <text x="275" y="130" fill="#c678dd" text-anchor="middle">-fmerge-all-constants</text>
+
+            <text x="455" y="94" fill="#e8934a" text-anchor="middle">-ffunction-sections</text>
+            <text x="455" y="112" fill="#e8934a" text-anchor="middle">-fdata-sections</text>
+            <text x="455" y="130" fill="#e8934a" text-anchor="middle">-fno-unwind-tables</text>
+            <text x="455" y="148" fill="#e8934a" text-anchor="middle">-fno-async-unwind-tab.</text>
+            <text x="455" y="166" fill="#e8934a" text-anchor="middle">-fvisibility=hidden</text>
+
+            <text x="650" y="94" fill="#4ec94e" text-anchor="middle">-fuse-ld=lld</text>
+            <text x="650" y="112" fill="#4ec94e" text-anchor="middle">--gc-sections</text>
+            <text x="650" y="130" fill="#4ec94e" text-anchor="middle">--icf=all</text>
+            <text x="650" y="148" fill="#4ec94e" text-anchor="middle">--as-needed</text>
+            <text x="650" y="166" fill="#4ec94e" text-anchor="middle">-s</text>
+
+            <text x="855" y="94" fill="#e5c07b" text-anchor="middle">nasm -Ox</text>
+          </g>
+        </svg>
+      </section>
+
+      <!-- THE SIZE DRIVER (-Oz) -->
+      <section>
+        <h2>The basics</h2>
+        <span class="stage opt">optimiser</span>
         <ul class="flag-list">
-          <li><code>-flto=thin</code> <span class="desc">&mdash; cross-TU dead code elimination</span></li>
-          <li><code>-fvisibility=hidden</code> <span class="desc">&mdash; no exported symbols by default</span></li>
-          <li><code>-fno-unwind-tables</code> <span class="desc">&mdash; remove .eh_frame section</span></li>
-          <li><code>-fno-asynchronous-unwind-tables</code> <span class="desc">&mdash; no async unwind metadata</span>
+          <li class="hero"><code>-Oz</code> <span class="desc">&mdash; optimise for size above all else</span></li>
+        </ul>
+        <ul style="display:block;font-size:0.72em;margin-top:0.6em">
+          <li>Starts from the <strong>-O2 pipeline</strong>
+          <li>Sets LLVM's <code>minsize</code>: inlining threshold <strong>225 &rarr; 5</strong></li>
+          <li>No loop unrolling, no vectorising</li>
+        </ul>
+        <p class="cluster-note">
+          Trade-off: slower hot loops. A pomodoro timer sleeps 99.99% of its life.
+        </p>
+      </section>
+
+      <!-- WHAT C++ ITSELF COSTS (front-end) -->
+      <section>
+        <h2>The basics</h2>
+        <span class="stage fe">front-end</span>
+        <ul class="flag-list">
+          <li><code>-fno-exceptions</code> <span class="desc">&mdash; no landing pads, no
+              <code>.gcc_except_table</code>, no personality routine</span></li>
+          <li><code>-fno-rtti</code> <span class="desc">&mdash; no <code>type_info</code>, no
+              <code>dynamic_cast</code></span></li>
+        </ul>
+        <p class="cluster-note">
+          These act in the <strong>front-end</strong>: they change what IR is generated <em>at all</em>.
+        </p>
+        <p class="warn" style="font-size:0.6em;margin-top:0.4em">
+          Cost: no library that throws across its API. No <code>dynamic_cast</code>.
+        </p>
+      </section>
+
+      <!-- 17a LTO REORDERS THE PIPELINE -->
+      <section>
+        <h3>what <code>-flto=thin</code> does to the pipeline</h3>
+        <svg viewBox="0 0 940 312">
+          <!-- normal -->
+          <text x="10" y="34" fill="#888" font-size="13" font-family="monospace">normal</text>
+          <g font-family="monospace">
+            <rect x="95" y="16" width="150" height="40" rx="4" fill="#2d4a63" stroke="#61dafb" />
+            <text x="170" y="41" fill="#ddd" font-size="12" text-anchor="middle">front-end</text>
+            <rect x="265" y="16" width="150" height="40" rx="4" fill="#3a3055" stroke="#c678dd" />
+            <text x="340" y="41" fill="#ddd" font-size="12" text-anchor="middle">optimise</text>
+            <rect x="435" y="16" width="150" height="40" rx="4" fill="#4a3520" stroke="#e8934a" />
+            <text x="510" y="41" fill="#ddd" font-size="12" text-anchor="middle">codegen</text>
+            <rect x="605" y="16" width="80" height="40" rx="4" fill="#1e1e1e" stroke="#888" />
+            <text x="645" y="41" fill="#61dafb" font-size="12" text-anchor="middle">.o</text>
+            <rect x="705" y="16" width="200" height="40" rx="4" fill="#243b2e" stroke="#4ec94e" />
+            <text x="805" y="41" fill="#ddd" font-size="12" text-anchor="middle">linker: resolve + staple</text>
+          </g>
+          <text x="645" y="74" fill="#666" font-size="11" text-anchor="middle" font-family="monospace">machine code,
+            per file, blind to the others</text>
+
+          <line x1="10" y1="108" x2="930" y2="108" stroke="#333" />
+
+          <!-- LTO -->
+          <text x="10" y="150" fill="#888" font-size="13" font-family="monospace">-flto=thin</text>
+          <g font-family="monospace">
+            <rect x="95" y="132" width="150" height="40" rx="4" fill="#2d4a63" stroke="#61dafb" />
+            <text x="170" y="157" fill="#ddd" font-size="12" text-anchor="middle">front-end</text>
+            <rect x="265" y="132" width="95" height="40" rx="4" fill="#1e1e1e" stroke="#c678dd" />
+            <text x="312" y="152" fill="#c678dd" font-size="11" text-anchor="middle">.o =</text>
+            <text x="312" y="166" fill="#c678dd" font-size="11" text-anchor="middle">bitcode</text>
+
+            <rect x="380" y="118" width="525" height="68" rx="5" fill="#243b2e" stroke="#4ec94e" stroke-width="2" />
+            <text x="642" y="137" fill="#4ec94e" font-size="12" text-anchor="middle">linker (LLD)</text>
+            <rect x="398" y="146" width="150" height="30" rx="4" fill="#3a3055" stroke="#c678dd" />
+            <text x="473" y="166" fill="#ddd" font-size="11" text-anchor="middle">optimise</text>
+            <rect x="560" y="146" width="150" height="30" rx="4" fill="#4a3520" stroke="#e8934a" />
+            <text x="635" y="166" fill="#ddd" font-size="11" text-anchor="middle">codegen</text>
+            <rect x="722" y="146" width="168" height="30" rx="4" fill="#243b2e" stroke="#4ec94e" />
+            <text x="806" y="166" fill="#ddd" font-size="11" text-anchor="middle">resolve + staple</text>
+          </g>
+          <path d="M312,174 C312,200 470,200 470,178" fill="none" stroke="#e5c07b" stroke-width="1.5"
+            marker-end="url(#ar)" />
+          <text x="360" y="215" fill="#e5c07b" font-size="11" font-family="monospace">handed back to LLVM</text>
+
+          <text x="470" y="248" fill="#e6e6e6" font-size="21" text-anchor="middle">
+            Codegen still runs on every function &mdash; just later, inside the link,
+          </text>
+          <text x="470" y="274" fill="#e6e6e6" font-size="21" text-anchor="middle">
+            and now with the whole program in view at once.
+          </text>
+          <text x="470" y="298" fill="#e6e6e6" font-size="21" text-anchor="middle">
+            "Thin" = that final codegen is split back into parallel per-module jobs.
+          </text>
+        </svg>
+      </section>
+
+      <!-- DEAD CODE & DEAD DATA -->
+      <section>
+        <h2>Dead code &amp; dead data</h2>
+        <ul class="flag-list">
+          <li><span class="ftag opt">optimiser</span><code>-flto=thin</code>
+            <span class="desc">&mdash; defer codegen to link; whole-program view</span>
           </li>
-          <li><code>-fmerge-all-constants</code> <span class="desc">&mdash; deduplicate identical constants</span></li>
+          <li><span class="ftag cg">codegen</span><code>-ffunction-sections</code>
+            <span class="desc">&mdash; one ELF section per function</span>
+          </li>
+          <li><span class="ftag cg">codegen</span><code>-fdata-sections</code>
+            <span class="desc">&mdash; one ELF section per global</span>
+          </li>
+          <li><span class="ftag ld">linker</span><code>-Wl,--gc-sections</code>
+            <span class="desc">&mdash; drop every section nothing reaches</span>
+          </li>
+          <li><span class="ftag ld">linker</span><code>-Wl,--icf=all</code>
+            <span class="desc">&mdash; fold byte-identical functions into one</span>
+          </li>
+          <li><span class="ftag cg">codegen</span><code>-fmerge-all-constants</code>
+            <span class="desc">&mdash; the same, for <code>.rodata</code></span>
+          </li>
         </ul>
+        <p class="cluster-note">
+          Three layers: <strong>LTO</strong> kills dead IR <em>before</em> codegen &middot;
+          <strong>GC</strong> kills dead sections <em>after</em> it &middot;
+          <strong>ICF</strong> merges the survivors.<br />
+          The sections flags exist <em>only</em> so <code>--gc-sections</code> has something to collect.
+        </p>
+        <p class="cluster-note" style="margin-top:0.5em">
+          Deferring codegen is why LTO sees across translation units
+        </p>
       </section>
 
-      <!-- 19 LINKER FLAGS -->
+      <!-- UNWIND METADATA -->
       <section>
-        <h2>Linker Flags</h2>
+        <h2>Unwind metadata</h2>
+        <span class="stage cg">codegen</span>
         <ul class="flag-list">
-          <li><code>-fuse-ld=lld</code> <span class="desc">&mdash; use LLVM LLD linker</span></li>
-          <li><code>-Wl,--gc-sections</code> <span class="desc">&mdash; discard unreferenced sections</span></li>
-          <li><code>-Wl,--icf=all</code> <span class="desc">&mdash; identical code folding</span></li>
-          <li><code>-Wl,-s</code> <span class="desc">&mdash; strip symbol table</span></li>
-          <li><code>-Wl,--as-needed</code> <span class="desc">&mdash; drop unused library references</span></li>
+          <li class="hero"><code>-fno-asynchronous-unwind-tables</code> <span class="desc">&mdash; does all the
+              work</span></li>
+          <li class="nop"><code>-fno-unwind-tables</code> <span class="desc">&mdash; a <strong>no-op</strong> on
+              x86-64</span></li>
         </ul>
+        <table style="font-size:0.55em;margin-top:0.5em">
+          <thead>
+            <tr>
+              <th style="text-align:left">on top of -Oz</th>
+              <th><code>.eh_frame</code></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="text-align:left">(neither)</td>
+              <td>920 B</td>
+            </tr>
+            <tr>
+              <td style="text-align:left">-fno-unwind-tables</td>
+              <td class="warn">920 B &mdash; unchanged!</td>
+            </tr>
+            <tr>
+              <td style="text-align:left">-fno-asynchronous-unwind-tables</td>
+              <td class="good">696 B</td>
+            </tr>
+            <tr class="great">
+              <td style="text-align:left">+ -fno-exceptions</td>
+              <td>72 B</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="cluster-note">
+          x86-64 <em>mandates</em> async unwind tables, so clang defaults to them &mdash; and that default
+          <strong>implies</strong> <code>-funwind-tables</code>, silently overriding the other flag.
+          <code>.eh_frame</code> only collapses when <code>-fno-exceptions</code> and the async flag
+          fire <em>together</em>.
+        </p>
+      </section>
+
+      <!-- 21 CLUSTER E -->
+      <section>
+        <h2>Symbol surfaces</h2>
+        <span class="stage cg">codegen</span><span class="stage ld">linker</span>
+        <p class="dim" style="font-size:0.65em;margin-bottom:0.3em">
+          Three flags that look interchangeable. They touch three different tables.
+        </p>
+        <table style="font-size:0.56em">
+          <thead>
+            <tr>
+              <th style="text-align:left">Flag</th>
+              <th>Affects</th>
+              <th>Loaded at runtime?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="text-align:left;font-family:monospace">-fvisibility=hidden</td>
+              <td><code>.dynsym</code> &mdash; who may call me</td>
+              <td class="good">yes</td>
+            </tr>
+            <tr>
+              <td style="text-align:left;font-family:monospace">-Wl,--as-needed</td>
+              <td><code>DT_NEEDED</code> &mdash; which libs to load</td>
+              <td class="good">yes</td>
+            </tr>
+            <tr>
+              <td style="text-align:left;font-family:monospace">-Wl,-s</td>
+              <td><code>.symtab</code> &mdash; names for debuggers</td>
+              <td class="warn">never</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="cluster-note">
+          <code>-fvisibility=hidden</code> is a <em>runtime</em> win (fewer relocations, faster startup).
+          <code>-Wl,-s</code> is a pure <em>disk</em> win &mdash; it deletes bytes the kernel never even loads.
+          Zero overlap.
+        </p>
       </section>
 
       <!-- 20 FLTK TINY RESULT -->
@@ -517,6 +884,67 @@ void tick_cb(void*) {
           </tbody>
         </table>
         <p class="warn" style="font-size:0.65em;margin-top:0.8em">Still 40&times; larger than the benchmark</p>
+      </section>
+
+      <!-- 20a THE FLAGS NEVER SAW FLTK -->
+      <section>
+        <h2>The flags never saw FLTK</h2>
+        <ul style="margin-top:0.6em">
+          <li><code>src/main.cpp</code> &mdash; <strong>350 lines</strong> &mdash; got all 15 flags</li>
+          <li><code>libfltk.a</code> &mdash; <strong class="warn">3.3 MB</strong> &mdash; got <span
+              class="warn">none</span> of them</li>
+        </ul>
+        <p style="font-size:0.7em;margin-top:0.9em">
+          We link a <strong>pre-built</strong> <code>/usr/local/lib/libfltk.a</code>: opaque machine code,
+          compiled separately with <code>-O3</code>, exceptions on, RTTI on.
+          <code>--gc-sections</code>, <code>--icf</code> and LTO stop at its edge.
+        </p>
+        <p class="ref" style="font-size:0.75em;margin-top:0.8em">
+          Your flags stop at your code.
+        </p>
+      </section>
+
+      <!-- 20b BUILD IT WITH US -->
+      <section>
+        <h3>So build FLTK <em>with</em> the app</h3>
+        <pre><code class="language-cmake" data-trim>
+add_subdirectory(${FLTK_SOURCE_DIR} fltk_src)   # FLTK is now part of OUR build
+
+foreach(t fltk fltk_images fltk_gl)             # ...so our flags reach it
+    target_compile_options(${t} PRIVATE ${TINY_CXX_FLAGS})
+endforeach()
+</code></pre>
+        <table style="margin-top:0.6em">
+          <tbody>
+            <tr>
+              <td style="text-align:left">pre-built FLTK</td>
+              <td style="color:#e5c07b">850,536 B</td>
+            </tr>
+            <tr class="great">
+              <td style="text-align:left"><strong>FLTK built with us</strong></td>
+              <td><strong>327,552 B</strong> &nbsp; &minus;61%</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="font-size:0.6em;margin-top:0.6em">
+          Its objects become <code>LLVM IR bitcode</code> instead of <code>ELF relocatable</code> &mdash;
+          the optimiser can finally see <em>inside</em> the library.
+        </p>
+      </section>
+
+      <!-- 20c THE CATCH -->
+      <section>
+        <h2>The Trade-off</h2>
+        <ul style="font-size:0.8em">
+          <li><strong>Build time.</strong> FLTK takes minutes. The archive was instant.</li>
+          <li><strong><code>-fno-exceptions</code> / <code>-fno-rtti</code> on someone else's library.</strong>
+            FLTK 1.4 survives it. Not every library will.</li>
+          <li><strong>You now own the library's build.</strong></li>
+        </ul>
+        <p class="dim" style="font-size:0.66em;margin-top:0.8em">
+          For most projects, keeping the fast build is the right call.<br />
+          Just know what you are paying for it.
+        </p>
       </section>
 
       <!-- 21 TRANSITION A: prev = tiny_pomodoro -->
@@ -562,8 +990,6 @@ void tick_cb(void*) {
       <section>
         <h3><code>tiny_pomodoro_pro</code> &mdash; shared Timer (<code>timer.hpp</code>)</h3>
         <pre><code class="language-cpp" data-trim>
-namespace pomodoro {
-
 class Timer {
 public:
     enum class State { Stopped, Running, Paused };
@@ -584,25 +1010,33 @@ public:
     }
     void pause() noexcept { state_ = State::Paused; }
     void reset() noexcept { remaining_ = initial_; state_ = State::Stopped; }
+</code></pre>
+      </section>
 
+      <!-- X11 CODE 1b: the worker loop -->
+      <section>
+        <h3><code>tiny_pomodoro_pro</code> &mdash; the worker thread</h3>
+        <pre><code class="language-cpp" data-trim>
 private:
     void run() noexcept {
         using namespace std::chrono_literals;
         while (!stop_flag_) {
-            if (state_ != State::Running) { std::this_thread::sleep_for(100ms); continue; }
+            if (state_ != State::Running) {
+                std::this_thread::sleep_for(100ms);
+                continue;
+            }
             std::this_thread::sleep_for(1s);
             if (state_ != State::Running) continue;
             if (remaining_ &gt; 0 &amp;&amp; --remaining_ == 0)
                 state_ = State::Stopped;
         }
     }
+
     int         initial_, remaining_;
     State       state_{State::Stopped};
     bool        stop_flag_{false};
     std::thread worker_;
 };
-
-} // namespace pomodoro
 </code></pre>
       </section>
 
@@ -619,9 +1053,8 @@ Window win = XCreateSimpleWindow(
     dpy, RootWindow(dpy, screen),
     100, 100, 360, 210, 1, black, white);
 
-XSelectInput(dpy, win,
-    ExposureMask | KeyPressMask |
-    ButtonPressMask | StructureNotifyMask);
+XSelectInput(dpy, win, ExposureMask | KeyPressMask |
+                       ButtonPressMask | StructureNotifyMask);
 
 Atom wmDelete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 XSetWMProtocols(dpy, win, &amp;wmDelete, 1);
@@ -631,20 +1064,17 @@ GC gc = XCreateGC(dpy, win, 0, nullptr);
 XFontStruct* font_big = XLoadQueryFont(dpy,
     "-*-helvetica-bold-r-*-*-24-*-*-*-*-*-*-*");
 if (!font_big) font_big = XLoadQueryFont(dpy, "fixed");
-
-XColor xcol{};
-XAllocNamedColor(dpy, DefaultColormap(dpy, screen),
-    "gray85", &amp;xcol, &amp;xcol);
 </code></pre>
       </section>
 
       <!-- 27 X11 CODE 3 -->
       <section>
-        <h3><code>tiny_pomodoro_pro</code> &mdash; drawing</h3>
+        <h3><code>tiny_pomodoro_pro</code> &mdash; centring text by hand</h3>
         <pre><code class="language-cpp" data-trim>
+// Xlib has no "label" — you measure the string and place the pixels.
 auto draw_centered = [&amp;](XFontStruct* fnt, int bx, int by,
-                          unsigned int bw, unsigned int bh,
-                          std::string_view text) {
+                         unsigned int bw, unsigned int bh,
+                         std::string_view text) {
     if (!fnt || text.empty()) return;
     const int len = static_cast&lt;int&gt;(text.size());
     const int tw  = XTextWidth(fnt, text.data(), len);
@@ -654,15 +1084,21 @@ auto draw_centered = [&amp;](XFontStruct* fnt, int bx, int by,
     XSetFont(dpy, gc, fnt-&gt;fid);
     XDrawString(dpy, win, gc, tx, ty, text.data(), len);
 };
+</code></pre>
+      </section>
 
+      <!-- X11 CODE 3b: the draw call -->
+      <section>
+        <h3><code>tiny_pomodoro_pro</code> &mdash; drawing a frame</h3>
+        <pre><code class="language-cpp" data-trim>
 auto draw = [&amp;](int secs) {
     XClearWindow(dpy, win);
     XSetForeground(dpy, gc, black);
     draw_centered(font_small, 0,  6, kWinW, 20, name_of(session));
     draw_centered(font_big,   0, 30, kWinW, 52, format_time(secs));
-    XDrawLine(dpy, win, gc, 10, 90, static_cast&lt;int&gt;(kWinW) - 10, 90);
+    XDrawLine(dpy, win, gc, 10, 90, kWinW - 10, 90);
 
-    auto draw_btn = [&amp;](const Button&amp; b) {
+    auto draw_btn = [&amp;](const Button&amp; b) {      // every button, by hand
         XSetForeground(dpy, gc, gray);
         XFillRectangle(dpy, win, gc, b.x, b.y, b.w, b.h);
         XSetForeground(dpy, gc, black);
@@ -673,6 +1109,12 @@ auto draw = [&amp;](int secs) {
     draw_btn(btn_start);   draw_btn(btn_reset);
 };
 </code></pre>
+      </section>
+
+      <!-- 27b X11 SCREENSHOT -->
+      <section class="center-slide">
+        <img src="tiny_pomodoro_pro.png" class="img-fill" alt="tiny_pomodoro_pro — raw X11 GUI"
+          onerror="showPlaceholder(this,'tiny_pomodoro_pro.png')" />
       </section>
 
       <!-- 28 X11 BUILD SIZES -->
@@ -748,13 +1190,11 @@ auto draw = [&amp;](int secs) {
       <section>
         <h3><code>tiny_pomodoro_pro_plus</code> &mdash; raw terminal</h3>
         <pre><code class="language-cpp" data-trim>
-namespace {
-
 termios g_orig_termios{};
 
 void restore_terminal() noexcept {
     tcsetattr(STDIN_FILENO, TCSANOW, &amp;g_orig_termios);
-    std::fputs("\033[?25h\033[0m\n", stdout);
+    std::fputs("\033[?25h\033[0m\n", stdout);   // show cursor again
     std::fflush(stdout);
 }
 
@@ -762,16 +1202,14 @@ void setup_raw_terminal() {
     tcgetattr(STDIN_FILENO, &amp;g_orig_termios);
     std::atexit(restore_terminal);
 
-    termios raw      = g_orig_termios;
-    raw.c_lflag     &amp;= ~static_cast&lt;tcflag_t&gt;(ICANON | ECHO);
-    raw.c_cc[VMIN]   = 0;
-    raw.c_cc[VTIME]  = 0;  // non-blocking read
+    termios raw     = g_orig_termios;
+    raw.c_lflag    &amp;= ~static_cast&lt;tcflag_t&gt;(ICANON | ECHO);
+    raw.c_cc[VMIN]  = 0;
+    raw.c_cc[VTIME] = 0;              // non-blocking read
 
     tcsetattr(STDIN_FILENO, TCSANOW, &amp;raw);
     std::fputs("\033[?25l", stdout);  // hide cursor
 }
-
-} // namespace
 </code></pre>
       </section>
 
@@ -782,27 +1220,21 @@ void setup_raw_terminal() {
 void render(const Timer&amp; t, Session sess, int pomodoros,
             int focus_min, int short_min, int long_min) {
     std::fputs("\033[H", stdout);   // home cursor — no clear, no flicker
-
-    std::fputs("\033[1m┌─────────────────────────────────┐\033[0m\n", stdout);
+    std::fputs("\033[1m┌───────────────────────────┐\033[0m\n", stdout);
 
     const auto name = name_of(sess);
-    std::printf("\033[1m│  %-20.*s        #%-3d  │\033[0m\n",
+    std::printf("\033[1m│  %-16.*s   #%-3d │\033[0m\n",
                 static_cast&lt;int&gt;(name.size()), name.data(), pomodoros);
 
     const int secs = t.seconds_left();
-    std::printf("\033[1m│         \033[32m%02d:%02d\033[0m\033[1m"
-                "                    │\033[0m\n", secs / 60, secs % 60);
+    std::printf("\033[1m│      \033[32m%02d:%02d\033[0m\033[1m"
+                "                │\033[0m\n", secs / 60, secs % 60);
 
-    const char* dot    = t.is_running() ? "\033[32m●\033[0m\033[1m"
-                                        : "\033[33m■\033[0m\033[1m";
-    const char* status = t.is_running() ? "Running" : "Paused ";
-    std::printf("\033[1m│         %s %s                │\033[0m\n", dot, status);
-
-    std::fputs("\033[1m├─────────────────────────────────┤\033[0m\n", stdout);
-    std::printf("\033[1m│  Focus \033[0m%-3d\033[1m  Short \033[0m%-3d"
-                "\033[1m  Long \033[0m%-3d\033[1m  │\033[0m\n",
-                focus_min, short_min, long_min);
-    std::fputs("\033[1m└─────────────────────────────────┘\033[0m\n", stdout);
+    const char* dot = t.is_running() ? "\033[32m●\033[0m\033[1m"
+                                     : "\033[33m■\033[0m\033[1m";
+    std::printf("\033[1m│      %s %s          │\033[0m\n",
+                dot, t.is_running() ? "Running" : "Paused ");
+    std::fputs("\033[1m└───────────────────────────┘\033[0m\n", stdout);
     std::fflush(stdout);
 }
 </code></pre>
@@ -816,17 +1248,14 @@ while (true) {
     char c = 0;
     if (read(STDIN_FILENO, &amp;c, 1) == 1) {
         switch (c) {
-            case 's': case 'S':
-                if (timer.is_running()) timer.pause(); else timer.start();
-                break;
-            case 'r': case 'R': timer.reset();                               break;
-            case 'f': focus_min = std::max(1,   focus_min - 1);              break;
-            case 'F': focus_min = std::min(240, focus_min + 1);              break;
-            case 'b': short_min = std::max(1,   short_min - 1);              break;
-            case 'B': short_min = std::min(120, short_min + 1);              break;
-            case 'l': long_min  = std::max(1,   long_min  - 1);              break;
-            case 'L': long_min  = std::min(240, long_min  + 1);              break;
-            case 'q': case 'Q': case '\x1b': restore_terminal(); return 0;
+            case 's': if (timer.is_running()) timer.pause();
+                      else                    timer.start();     break;
+            case 'r': timer.reset();                             break;
+            case 'f': focus_min = std::max(1,   focus_min - 1);  break;
+            case 'F': focus_min = std::min(240, focus_min + 1);  break;
+            case 'b': short_min = std::max(1,   short_min - 1);  break;
+            case 'B': short_min = std::min(120, short_min + 1);  break;
+            case 'q': case '\x1b': restore_terminal(); return 0;
         }
     }
     if (was_running &amp;&amp; !timer.is_running() &amp;&amp; timer.seconds_left() == 0)
@@ -836,6 +1265,12 @@ while (true) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 </code></pre>
+      </section>
+
+      <!-- 34b TERMINAL C++ SCREENSHOT -->
+      <section class="center-slide">
+        <img src="tiny_pomodoro_pro_plus.png" class="img-fill" alt="tiny_pomodoro_pro_plus — terminal UI"
+          onerror="showPlaceholder(this,'tiny_pomodoro_pro_plus.png')" />
       </section>
 
       <!-- 35 TERMINAL C++ BUILD SIZES -->
@@ -917,8 +1352,6 @@ while (true) {
 %define SYS_clone      56
 %define SYS_ioctl      16
 
-%define THREAD_FLAGS (CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM)
-
 section .bss
     orig_termios:  resb 60          ; struct termios on Linux x86-64
     g_state:       resd 1           ; STATE_STOPPED / RUNNING / PAUSED
@@ -930,7 +1363,7 @@ section .bss
     g_short_min:   resd 1
     g_long_min:    resd 1
     itoa_buf:      resb 16          ; scratch for number formatting
-    thread_stack:  resb (1024*1024) ; 1 MiB thread stack
+    thread_stack:  resb (1024*1024) ; 1 MiB thread stack — 0 B on disk
 </code></pre>
       </section>
 
@@ -943,15 +1376,13 @@ countdown_thread:
     cmp dword [rel g_stop_thread], 1
     je  .exit
     cmp dword [rel g_state], STATE_RUNNING
-    jne .sleep_short
-
-    lea rdi, [rel ts_1s]          ; sleep 1 second
+    jne .sleep_short              ; paused → poll every 100 ms
+    lea rdi, [rel ts_1s]          ; running → sleep exactly 1 second
     xor rsi, rsi
     mov rax, SYS_nanosleep
     syscall
-
     cmp dword [rel g_state], STATE_RUNNING
-    jne .loop
+    jne .loop                     ; state changed while we slept
     mov eax, [rel g_remaining]
     test eax, eax
     jz  .loop
@@ -960,72 +1391,80 @@ countdown_thread:
     jnz .loop
     mov dword [rel g_state], STATE_STOPPED
     jmp .loop
-
-.sleep_short:
-    lea rdi, [rel ts_100ms]       ; sleep 100 ms when paused/stopped
-    xor rsi, rsi
-    mov rax, SYS_nanosleep
-    syscall
-    jmp .loop
-
-.exit:
-    mov rax, SYS_exit
-    xor rdi, rdi
-    syscall
 </code></pre>
       </section>
 
       <!-- 41 ASSEMBLY CODE 3 -->
       <section>
-        <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; itoa &amp; terminal</h3>
+        <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; itoa, by hand</h3>
         <pre><code class="language-x86asm" data-trim>
-; convert integer in edi to decimal string in itoa_buf
+; edi → decimal string in itoa_buf.  There is no printf here.
 itoa:
-    test edi, edi
-    jnz  .nonzero
-    lea  rdi, [rel itoa_buf]
-    mov  byte [rdi], '0'
-    mov  byte [rdi+1], 0
-    ret
-.nonzero:
+    mov  eax, edi
     lea  rbx, [rel itoa_buf + 14]
-    mov  byte [rbx], 0
+    mov  byte [rbx], 0            ; NUL, then fill backwards
     dec  rbx
 .div_loop:
     xor  edx, edx
     mov  ecx, 10
     div  ecx                      ; eax = quotient, edx = remainder
-    add  dl, '0'
+    add  dl, '0'                  ; remainder → ASCII digit
     mov  [rbx], dl
     dec  rbx
     test eax, eax
     jnz  .div_loop
+    inc  rbx                      ; rbx → first digit
+    ret
+</code></pre>
+      </section>
 
+      <!-- ASSEMBLY CODE 3b: raw terminal -->
+      <section>
+        <h3><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; raw terminal</h3>
+        <pre><code class="language-x86asm" data-trim>
 setup_raw_terminal:
     mov rax, SYS_ioctl
     xor rdi, rdi                  ; stdin
     mov rsi, TCGETS
     lea rdx, [rel orig_termios]
-    syscall
+    syscall                       ; read the current settings
+
     lea rdi, [rel raw_termios]
-    mov eax, [rdi + 12]           ; c_lflag at offset 12
-    and eax, ~(ICANON | ECHO)
+    mov eax, [rdi + 12]           ; c_lflag lives at offset 12
+    and eax, ~(ICANON | ECHO)     ; no line buffering, no echo
     mov [rdi + 12], eax
+
     mov rax, SYS_ioctl
     xor rdi, rdi
     mov rsi, TCSETS
     lea rdx, [rel raw_termios]
-    syscall
+    syscall                       ; write them back
     ret
 </code></pre>
       </section>
 
-      <!-- 42 ASSEMBLY TINY FLAGS -->
+      <!-- 42 ASSEMBLY TINY FLAGS — CLUSTER F -->
       <section>
-        <h2><code>tiny_pomodoro_pro_plus_ultra</code> &mdash; tiny flags</h2>
-        <ul class="flag-list" style="margin-bottom:0.8em">
-          <li><code>nasm -Ox</code> <span class="desc">&mdash; multi-pass optimizer for shortest encodings</span></li>
+        <h2>The assembler</h2>
+        <span class="stage asm">assembler</span>
+        <ul class="flag-list">
+          <li><code>nasm -Ox</code> <span class="desc">&mdash; multi-pass optimiser: shortest encoding for every
+              instruction</span></li>
+          <li><code>ld -nostdlib -static -s</code> <span class="desc">&mdash; no libc, no runtime, no symbols</span>
+          </li>
         </ul>
+        <p class="cluster-note">
+          NASM's single forward pass conservatively picks the <em>longest</em> encoding when a jump target
+          is still unknown. <code>-Ox</code> iterates to a fixed point &mdash; a <code>jmp short</code> is
+          2 bytes, a <code>jmp near</code> is 5.<br />
+          <code>-nostdlib</code> is the big one here: the C runtime alone is ~10 KB before you write a line.
+        </p>
+      </section>
+
+      <!-- 42b ASSEMBLY SCREENSHOT -->
+      <section class="center-slide">
+        <img src="tiny_pomodoro_pro_plus_ultra.png" class="img-fill" alt="tiny_pomodoro_pro_plus_ultra — terminal UI in pure asm"
+          onerror="showPlaceholder(this,'tiny_pomodoro_pro_plus_ultra.png')" />
       </section>
 
       <!-- 43 ASSEMBLY BUILD SIZES -->
@@ -1093,6 +1532,14 @@ setup_raw_terminal:
               <td>1.6 MB</td>
               <td>1.1 MB</td>
               <td class="good">831 KB</td>
+            </tr>
+            <tr>
+              <td style="text-align:left;font-family:monospace">tiny_pomodoro_src</td>
+              <td>&mdash;</td>
+              <td>&mdash;</td>
+              <td>&mdash;</td>
+              <td>1.1 MB</td>
+              <td class="good">320 KB</td>
             </tr>
             <tr>
               <td style="text-align:left;font-family:monospace">tiny_pomodoro_pro</td>
@@ -1265,8 +1712,12 @@ setup_raw_terminal:
               <td class="ref">20 KB</td>
             </tr>
             <tr>
-              <td>tiny_pomodoro (FLTK)</td>
+              <td>tiny_pomodoro (FLTK, pre-built)</td>
               <td style="color:#e5c07b">831 KB</td>
+            </tr>
+            <tr>
+              <td>tiny_pomodoro_src (FLTK, ours)</td>
+              <td style="color:#e5c07b">320 KB</td>
             </tr>
             <tr>
               <td>tiny_pomodoro_pro (X11)</td>
@@ -1291,7 +1742,7 @@ setup_raw_terminal:
       <!-- 47 THANK YOU -->
       <section class="center-slide">
         <h1>Questions?</h1>
-        <p style="margin-top:0.6em; font-size:0.6em; color:#888;">Thank you!</p>
+        <p style="margin-top:0.6em; font-size:0.6em; color:#c8c8c8;">Thank you!</p>
       </section>
 
     </div><!-- /slides -->
@@ -1314,6 +1765,14 @@ setup_raw_terminal:
       slideNumber: 'c/t',
       transition: 'slide',
       transitionSpeed: 'fast',
+      // 16:9 canvas fills a widescreen (no side letterboxing); the high maxScale
+      // lets the deck scale all the way up on large / high-DPI displays instead of
+      // capping at 2x and sitting small in the middle.
+      width: 1280,
+      height: 720,
+      margin: 0.03,
+      minScale: 0.2,
+      maxScale: 3.0,
       plugins: [RevealHighlight, RevealNotes]
     });
   </script>

@@ -19,7 +19,9 @@ This project is a functional pomodoro timer application that demonstrates size o
 - **Compiler**: clang++-20, NASM
 - **Build System**: CMake 3.20+
 - **GUI**:
-  - `tiny_pomodoro` — FLTK-based GUI
+  - `tiny_pomodoro` — FLTK-based GUI, linked against the **pre-built** `/usr/local/lib/libfltk.a`
+  - `tiny_pomodoro_src` — **the same `main.cpp`**, but FLTK is compiled from source as part of
+    this build, so the size flags apply to the library too (see below)
   - `tiny_pomodoro_pro` — raw X11 (no extra GUI framework)
   - `tiny_pomodoro_pro_plus` — terminal UI (ANSI escapes, no X11/FLTK/ALSA)
   - `tiny_pomodoro_pro_plus_ultra` — terminal UI in pure x86-64 assembly (raw Linux syscalls, no libc)
@@ -124,6 +126,35 @@ It will be copied automatically to `build/<type>/sounds/beep.wav` (used when run
 from the build tree) and installed to `/usr/local/share/sounds/tiny_pomodoro/beep.wav`
 by `make install-*`. If the file is absent or invalid, a synthesised 880 Hz beep
 is played instead.
+
+## Building FLTK from source (`tiny_pomodoro_src`)
+
+`tiny_pomodoro` links the pre-built `/usr/local/lib/libfltk.a`. That archive was
+compiled separately with `-O3`, exceptions and RTTI on, and against libstdc++ —
+so **none of the size flags below apply to it**. They apply only to `src/main.cpp`.
+
+`tiny_pomodoro_src` builds the same `main.cpp`, but pulls FLTK in with
+`add_subdirectory` so the flags reach the library's own sources. Point
+`FLTK_SOURCE_DIR` at an FLTK checkout (defaults to `../fltk`):
+
+```bash
+cmake -S . -B build/tiny -DCMAKE_BUILD_TYPE=Tiny -DFLTK_SOURCE_DIR=/path/to/fltk
+```
+
+If the directory does not exist, the target is silently skipped and everything
+else builds as before.
+
+| build | pre-built FLTK | FLTK from source |
+|-------|---------------:|-----------------:|
+| `Release` (`-O3`, no size flags) | 1,112,096 B | 1,115,616 B |
+| `Tiny` (all 15 flags) | 850,536 B | **327,552 B** |
+
+Compiling the library from source is *not itself* an optimization — in `Release`
+it is marginally bigger. It is what gives the optimizations something to work on.
+It also lets FLTK be built against libc++, so the binary stops needing *two* C++
+runtimes (`libstdc++` **and** `libc++abi`).
+
+Cost: FLTK takes minutes to compile, so every build type now rebuilds it.
 
 ## Size Optimization Techniques Demonstrated
 

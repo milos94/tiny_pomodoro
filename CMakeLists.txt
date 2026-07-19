@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++-20")
+# FLTK compiles C sources too; they must go through clang as well, or -flto=thin
+# is handed to gcc, which does not understand it.
+set(CMAKE_C_COMPILER "/usr/bin/clang-20")
 
-project(tiny_pomodoro CXX)
+project(tiny_pomodoro C CXX)
 
 # XDG/FHS install paths
 include(GNUInstallDirs)
@@ -15,8 +18,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile commands for clangd and clang-tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find FLTK (used by the FLTK build only)
-find_package(FLTK REQUIRED CONFIG)
+# The PRE-BUILT FLTK, imported by hand rather than via find_package(FLTK).
+#
+# find_package would import a target literally named "fltk", which collides with
+# the target of the same name that FLTK's own CMakeLists creates when we build it
+# from source below.  We want both in one build tree so the two binaries can be
+# compared, so the pre-built one gets an explicit, differently-named target.
+find_library(FLTK_PREBUILT_LIBRARY NAMES fltk PATHS /usr/local/lib REQUIRED)
+find_path(FLTK_PREBUILT_INCLUDE_DIR NAMES FL/Fl.H PATHS /usr/local/include REQUIRED)
+
+add_library(fltk_prebuilt STATIC IMPORTED)
+set_target_properties(fltk_prebuilt PROPERTIES
+    IMPORTED_LOCATION "${FLTK_PREBUILT_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FLTK_PREBUILT_INCLUDE_DIR}"
+)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
 pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-cursor)
@@ -36,8 +52,8 @@ target_include_directories(tiny_pomodoro PRIVATE
 )
 
 target_link_libraries(tiny_pomodoro PRIVATE
-    fltk
-    X11 Xext Xinerama Xcursor Xrender Xfixes fontconfig
+    fltk_prebuilt
+    X11 Xext Xinerama Xcursor Xrender Xfixes Xft fontconfig
     ${GTK3_LIBRARIES}
     ${WAYLAND_LIBRARIES}
     ${XKBCOMMON_LIBRARIES}
@@ -93,6 +109,106 @@ endif()
 
 # Helper: list of pomodoro targets to apply common flags to
 set(POMODORO_TARGETS tiny_pomodoro tiny_pomodoro_pro tiny_pomodoro_pro_plus)
+
+# The size flags, named once so the app and any library we build from source
+# cannot drift apart.  They must agree on -flto=thin in particular, or the link
+# fails.  Split by language: -fno-rtti / -fno-exceptions / -stdlib are C++ only.
+set(TINY_CXX_FLAGS
+    -Oz
+    -ffunction-sections
+    -fdata-sections
+    -fno-rtti
+    -fno-exceptions
+    -flto=thin
+    -fvisibility=hidden
+    -fno-unwind-tables
+    -fno-asynchronous-unwind-tables
+    -fmerge-all-constants
+)
+set(TINY_C_FLAGS
+    -Oz
+    -ffunction-sections
+    -fdata-sections
+    -flto=thin
+    -fvisibility=hidden
+    -fno-unwind-tables
+    -fno-asynchronous-unwind-tables
+    -fmerge-all-constants
+)
+set(TINY_LINK_FLAGS
+    -fuse-ld=lld
+    -flto=thin
+    -Wl,--gc-sections
+    -Wl,-s
+    -Wl,--as-needed
+    -Wl,--icf=all
+)
+
+# ── FLTK from source ─────────────────────────────────────────────────────────
+#
+# tiny_pomodoro links the *pre-built* /usr/local/lib/libfltk.a: opaque native
+# code, compiled -O3 against libstdc++.  LTO cannot see into it, and because the
+# app uses libc++ the executable ends up linking *two* C++ runtimes.
+#
+# tiny_pomodoro_src is the same source file, but FLTK is compiled as part of
+# this build, with our flags.  Its object files are then LLVM bitcode, so LTO,
+# --gc-sections and --icf can finally reach inside the library.
+set(FLTK_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../fltk"
+    CACHE PATH "FLTK source checkout, compiled together with the app")
+
+if(EXISTS "${FLTK_SOURCE_DIR}/CMakeLists.txt")
+    # Mirror the configuration the pre-built libfltk.a was made with, so the two
+    # differ only in the flags — not in which FLTK they are.
+    set(FLTK_BUILD_FLUID         OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_FLTK_OPTIONS  OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_TEST          OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_EXAMPLES      OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_FORMS         OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_SHARED_LIBS   OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_HTML_DOCS     OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_PDF_DOCS      OFF CACHE BOOL "" FORCE)
+    set(FLTK_BACKEND_WAYLAND     OFF CACHE BOOL "" FORCE)
+    set(FLTK_USE_PANGO           OFF CACHE BOOL "" FORCE)
+    set(FLTK_BUILD_GL            ON  CACHE BOOL "" FORCE)
+
+    add_subdirectory("${FLTK_SOURCE_DIR}" fltk_src EXCLUDE_FROM_ALL)
+
+    add_executable(tiny_pomodoro_src src/main.cpp)
+    target_link_libraries(tiny_pomodoro_src PRIVATE
+        fltk::fltk
+        asound
+    )
+    target_compile_definitions(tiny_pomodoro_src PRIVATE
+        SOUND_PATH="${CMAKE_INSTALL_FULL_DATADIR}/sounds/tiny_pomodoro/beep.wav"
+    )
+
+    # Link with libc++ too.  tiny_pomodoro cannot do this: the pre-built FLTK is
+    # a libstdc++ build, so that binary has to drag in *both* runtimes.  Since we
+    # compile FLTK ourselves here, one runtime is enough.
+    target_link_options(tiny_pomodoro_src PRIVATE -stdlib=libc++)
+
+    # The app itself gets the usual treatment.
+    list(APPEND POMODORO_TARGETS tiny_pomodoro_src)
+
+    # ...and so does FLTK.  Per-language, because FLTK also compiles C.
+    foreach(fltk_tgt fltk fltk_images fltk_gl fltk_jpeg fltk_png fltk_z)
+        if(TARGET ${fltk_tgt})
+            # libc++ unconditionally: this is an ABI decision, not an optimisation.
+            # The app is built with libc++, so FLTK must be too, in every build
+            # type — otherwise the two disagree about std::string and the link
+            # fails with undefined std::__throw_* / _Rb_tree_* symbols.
+            target_compile_options(${fltk_tgt} PRIVATE
+                "$<$<COMPILE_LANGUAGE:CXX>:-stdlib=libc++>"
+            )
+            if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
+                target_compile_options(${fltk_tgt} PRIVATE
+                    "$<$<COMPILE_LANGUAGE:CXX>:${TINY_CXX_FLAGS}>"
+                    "$<$<COMPILE_LANGUAGE:C>:${TINY_C_FLAGS}>"
+                )
+            endif()
+        endif()
+    endforeach()
+endif()
 
 # Per-build-type output directory
 string(TOLOWER "${CMAKE_BUILD_TYPE}" BUILD_TYPE_LOWER)
@@ -150,6 +266,10 @@ install(TARGETS
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+if(TARGET tiny_pomodoro_src)
+    install(TARGETS tiny_pomodoro_src RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
 # Shared sound
 install(FILES assets/beep.wav
     DESTINATION ${CMAKE_INSTALL_DATADIR}/sounds/tiny_pomodoro
@@ -172,26 +292,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Tiny")
     set(CMAKE_ASM_NASM_FLAGS "-f elf64 -Ox")
     set(CMAKE_ASM_NASM_LINK_EXECUTABLE "ld -o <TARGET> <OBJECTS> -nostdlib -static -s")
     foreach(tgt ${POMODORO_TARGETS})
-        target_compile_options(${tgt} PRIVATE
-            -Oz
-            -ffunction-sections
-            -fdata-sections
-            -fno-rtti
-            -fno-exceptions
-            -flto=thin
-            -fvisibility=hidden
-            -fno-unwind-tables
-            -fno-asynchronous-unwind-tables
-            -fmerge-all-constants
-        )
-        target_link_options(${tgt} PRIVATE
-            -fuse-ld=lld
-            -flto=thin
-            -Wl,--gc-sections
-            -Wl,-s
-            -Wl,--as-needed
-            -Wl,--icf=all
-        )
+        target_compile_options(${tgt} PRIVATE ${TINY_CXX_FLAGS})
+        target_link_options(${tgt} PRIVATE ${TINY_LINK_FLAGS})
     endforeach()
 endif()
 

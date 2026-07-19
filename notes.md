@@ -9,7 +9,228 @@ flags whose effects overlap sit next to each other and the overlap can be
 discussed in one place. Each cluster starts with a short note on how the
 flags inside it interact.
 
+**Two sections were factually wrong and are now corrected** — Cluster D (the
+unwind pair: I had the two flags backwards) and the Fast Light Toolkit (FLTK)
+background (it is
+linked *statically*, not as a `.so`). Both are marked with a CORRECTED note.
+Read those before rehearsing.
+
 ---
+
+# Part 0 — Background you need before the flags make sense
+
+## How a C++ file becomes an executable
+
+The single most useful framing for the talk: **every one of the 15 flags acts
+at exactly one stage of this pipeline.** Most confusion about them
+(*"isn't `-fvisibility=hidden` the same as stripping?"*) dissolves the moment
+you know which stage a flag fires at.
+
+| # | Stage | Tool | Input → Output |
+|---|-------|------|----------------|
+| 1 | Preprocess | `clang -E` | `.cpp` + `#include`s → one big translation unit (TU) |
+| 2 | Parse / semantic analysis | clang front-end | TU → abstract syntax tree (AST) |
+| 3 | Intermediate-representation generation | clang front-end | AST → **LLVM intermediate representation (IR)** |
+| 4 | Optimise | LLVM middle-end | IR → better IR (target-independent) |
+| 5 | Code generation | LLVM back-end | IR → **machine code**, packed into an `.o` |
+| 6 | Link | LLD (the LLVM linker) | many `.o` + libraries → one executable |
+| 7 | Load | Linux kernel + `ld.so` | executable → a running process |
+
+Things worth knowing that are easy to get wrong on stage:
+
+- **The AST is not the IR.** The AST is a faithful tree of the C++ you wrote
+  (it still knows about templates, classes, `for` loops). LLVM IR is a
+  low-level, typed, static-single-assignment (SSA) form instruction language
+  with no C++ in it at all.
+  `-fno-exceptions` and `-fno-rtti` act at the *front-end* — they change what
+  IR is even generated. By stage 4 the information is simply not there to
+  remove.
+- **Stage 4 is target-independent, stage 5 is not.** `-Oz` mostly steers
+  stage 4 (see below); instruction-encoding choices happen in stage 5.
+- **An `.o` file is a bag of sections, plus a symbol table, plus
+  relocations.** It is not yet a program: addresses are unresolved
+  placeholders. Relocations are the "fill this in later" notes the linker
+  reads.
+- **`.o` and the final executable are both Executable and Linkable Format
+  (ELF)**, but different *types*:
+  `ET_REL` (relocatable) vs `ET_EXEC`/`ET_DYN` (executable). `readelf -h`
+  shows this on the `Type:` line.
+
+### What `-Oz` actually changes (stage 4)
+
+`-Os` and `-Oz` both start from the **`-O2` pass pipeline** — this surprises
+people who assume `-Os` is "`-O0` but smaller". What `-Oz` does is set the
+LLVM **`minsize`** function attribute (`-Os` sets `optsize`), and that
+attribute is consulted by the cost models of individual passes:
+
+- **inlining threshold**: roughly **5** at `-Oz`, **50** at `-Os`, **225** at
+  `-O2`/`-O3`. This is the single biggest lever.
+- **loop unrolling**: off.
+- **loop vectorisation / superword-level-parallelism (SLP) vectorisation**: off.
+- prefers a `call` to a shared helper over inlining it; prefers shorter
+  instruction encodings even when marginally slower.
+
+If someone asks "what does `-Oz` cost me at runtime": on a pomodoro timer,
+nothing measurable — the program sleeps ~99.99% of its life. On a hot numeric
+loop it can be a large multiple. Be honest that this is a *domain-appropriate*
+choice, not a universal one.
+
+### The plot twist: with `-flto=thin`, your compiler does not compile
+
+This is the best single demo in the whole talk, and it takes one command:
+
+```
+$ file build/tiny/CMakeFiles/tiny_pomodoro_pro_plus.dir/src/main_pro_plus.cpp.o
+… LLVM IR bitcode
+$ file build/release/CMakeFiles/tiny_pomodoro_pro_plus.dir/src/main_pro_plus.cpp.o
+… ELF 64-bit LSB relocatable, x86-64
+```
+
+Under `-flto=thin` the "object file" contains **no machine code at all** — it
+is serialised LLVM IR. Stages 4 and 5 have been *moved into the linker*. That
+is why link-time optimization (LTO) can do things `--gc-sections` cannot (it optimises across
+translation units, before codegen), and equally why it is powerless against a
+pre-built static archive like `libfltk.a` (native code, not bitcode).
+
+If you want a second beat: `nm` on the bitcode `.o` fails or reports nothing
+useful, while `llvm-nm` reads it fine — because it is not an ELF file.
+
+---
+
+## The ELF file format
+
+The executable is not a blob. It has a rigid structure, and **the single most
+important idea in the whole talk lives here**:
+
+> **The linker thinks in _sections_. The kernel thinks in _segments_.
+> The flags all operate on sections. The file size is decided by segments.**
+
+That gap is exactly why the flags stop paying off at ~8 KB.
+
+### The four regions of an ELF file
+
+1. **ELF header** (64 bytes). Magic `\x7fELF`, class (64-bit), type
+   (`ET_EXEC`/`ET_DYN`), machine (x86-64), entry point, and the offsets of the
+   next two tables. `readelf -h`.
+2. **Program header table** (the *segment* view). One entry per segment.
+   **This is what the kernel reads.** `readelf -lW`.
+3. **The content** — the sections themselves (`.text`, `.rodata`, `.data`,
+   `.bss`, `.symtab`, …).
+4. **Section header table** (the *section* view). **The kernel never reads
+   this.** It exists for the linker, the debugger, `objdump`, `readelf`.
+   You can literally delete it and the program still runs.
+
+### Sections vs segments — say this slowly
+
+The **same bytes** are described twice, by two tables, for two different
+audiences:
+
+| | Sections | Segments |
+|---|---|---|
+| Described by | section header table | program header table |
+| Consumer | linker, debugger, `objdump` | **the kernel's ELF loader** |
+| Typical count | ~30 | **3–4** |
+| Granularity | one per kind of content | one per **memory protection** |
+| Needed to run? | **no** | **yes** |
+
+`readelf -lW` prints the mapping between them at the bottom
+("Section to Segment mapping"). For `tiny_pomodoro_2`:
+
+```
+LOAD  Offset 0x000000  FileSiz 0x0000e8  Flg R    Align 0x1000   ← ELF+prog headers
+LOAD  Offset 0x001000  FileSiz 0x00007a  Flg R E  Align 0x1000   ← .text
+LOAD  Offset 0x002000  FileSiz 0x000001  Flg R    Align 0x1000   ← .rodata
+```
+
+### Why segments must live on separate pages — the heart of the floor slide
+
+The kernel loads a program by **`mmap()`ing each `PT_LOAD` segment** into the
+process's address space. Two facts collide:
+
+1. `mmap()` works at **page granularity** — 4 KiB on x86-64.
+2. Memory protection (`r`/`w`/`x`) is a property of a **page**, set in the
+   page table. There is no finer unit. The hardware memory-management unit
+   (MMU) has no way to say
+   "the first 122 bytes of this page are executable and the rest is not".
+
+So content with **different protection cannot share a page**. `.text` needs
+`R+X`; `.rodata` needs `R` (and must *not* be `X`, or you hand an attacker a
+code-injection surface); `.data`/`.bss` need `R+W` (and must not be `X`).
+Three protections ⇒ three segments ⇒ **three pages minimum**, no matter how
+few bytes are actually in them.
+
+That is why `tiny_pomodoro_2` — **122 bytes of code** — is **8,480 bytes on
+disk**. Its three pages are essentially empty:
+
+| Page | Real content | Bytes used | Bytes wasted |
+|------|--------------|-----------:|-------------:|
+| 1 (`R`) | ELF header + 3 program headers | 232 | 3,864 |
+| 2 (`R+X`) | `.text` | 122 | 3,974 |
+| 3 (`R`) | `.rodata` — a single `0x07` BEL (bell) byte | 1 | ~31 |
+| — | section headers + `.shstrtab` | ~64 | — |
+
+**~419 bytes of content in an 8,480-byte file. About 95% of it is padding.**
+And the file is *not* 12,288 bytes only because the last page is truncated
+rather than padded out.
+
+The empirical confirmation, which is the line to land the talk on:
+`_ultra` has **3,046 bytes** of `.text`; `_2` has **122**. That is **25×
+more code — and only a 6% bigger file** (8,992 vs 8,480 B). Once your content
+fits inside a page, more code is *free* until you spill into the next one.
+
+### The two orthogonal axes — kills the naive "binary size" mental model
+
+Two sections from this very project, sitting at opposite corners:
+
+| | On disk | In memory at runtime |
+|---|---|---|
+| **`.bss`** (`_ultra`'s 1 MiB thread stack) | **0 bytes** | **1 MiB** |
+| **`.symtab`** (`tiny_pomodoro`, unstripped) | **~244 KB** | **0 bytes** |
+
+`.bss` is "zero-initialised data": the ELF records only *how big* it is
+(`MemSiz` > `FileSiz` in the program header) and the kernel hands you zeroed
+pages. It costs nothing in the file. `.symtab` is the reverse: it is never in
+a `PT_LOAD` segment, so the loader never maps it, but every byte of it sits on
+your disk.
+
+**"Binary size" is not one number**, and the flags do not all act on the same
+one. `-Wl,-s` is a *disk* optimisation with zero runtime effect.
+`-fvisibility=hidden` is a *runtime* optimisation (fewer dynamic relocations,
+faster startup) that happens to shrink the file a little too.
+
+### How to go below the page floor (the "different talk" slide)
+
+1. **Merge the segments.** Put `.rodata` in the same `R+X` segment as `.text`
+   → two pages, then one. Needs a custom linker script; no standard flag
+   exposes it.
+2. **Overlap the headers.** The ELF header has padding (`e_ident[EI_PAD]`) and
+   fields the kernel ignores; the program header table can be hidden inside
+   them.
+3. **Hand-roll the ELF.** Brian Raiter's *Teensy ELF* reaches **45 bytes** by
+   abandoning sections entirely and using header padding as instructions.
+   Unstrippable, un-debuggable, kernel-version-fragile — but it runs.
+
+**The takeaway line.** *"The flags get you to the page floor. Below it you are
+not optimising any more — you are hand-crafting ELF, and that is a different
+talk."*
+
+### Tools to have in your shell on stage
+
+| Command | Shows |
+|---------|-------|
+| `readelf -h <bin>` | ELF header — type, entry point |
+| `readelf -lW <bin>` | **segments** + section→segment mapping (`Align 0x1000` is the smoking gun) |
+| `readelf -SW <bin>` | **sections** — names, sizes, offsets |
+| `readelf -d <bin>` | `.dynamic` — the `DT_NEEDED` library list |
+| `size <bin>` | `.text` / `.data` / `.bss` one-liner — best live demo |
+| `nm -C <bin>` | symbols (fails on a stripped binary — that *is* the demo) |
+| `file <x>.o` | reveals LLVM bitcode vs ELF under `-flto` |
+| `ldd <bin>` | what actually gets loaded (vs what you passed to `-l`) |
+| `bloaty <bin>` | per-section/per-symbol byte attribution |
+
+---
+
+# Part 1 — The flags
 
 ## Cluster A — The overall size driver
 
@@ -80,10 +301,11 @@ global dead-code elimination can drop entire functions and globals.
 
 **Overlap with the rest of Cluster B.** LTO already does, at the IR level,
 much of what `-ffunction-sections` + `-fdata-sections` + `--gc-sections`
-do at the ELF level (function-granularity DCE) and what
+do at the ELF level (function-granularity dead-code elimination, DCE) and what
 `-fmerge-all-constants` does for `.rodata` blobs (cross-TU constant
 merging). The section-based flags are still pulling weight because
-**system libraries are not LTO'd** — FLTK, libc++, ALSA, X11 all arrive
+**system libraries are not LTO'd** — FLTK, libc++, the Advanced Linux Sound
+Architecture (ALSA), and the X Window System (X11) all arrive
 as opaque `.o`/`.a` files, and the only tool that can prune them is the
 linker's section-level GC.
 
@@ -117,7 +339,7 @@ relocation entries) and slightly slower link times. Both are dwarfed by
 the final binary size win.
 
 **Sources.**
-- GCC docs `-ffunction-sections`:
+- GNU Compiler Collection (GCC) docs `-ffunction-sections`:
   <https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html>
 - GNU `ld` manual on `--gc-sections`:
   <https://sourceware.org/binutils/docs/ld/Options.html>
@@ -177,7 +399,7 @@ executables.
 
 ### 6. `-Wl,--icf=all`
 
-**What it does.** Identical Code Folding. After all input sections are
+**What it does.** Identical code folding (ICF). After all input sections are
 laid out, the linker hashes the body of each function-bearing section
 and merges sections that are byte-identical (modulo relocations) into a
 single copy, redirecting all references. `=all` folds *anything* that
@@ -241,7 +463,7 @@ addresses of constants, but be aware before recommending it broadly.
 
 ## Cluster C — Disabling C++ runtime features
 
-These two travel together. Both remove ABI machinery that the C++
+These two travel together. Both remove application binary interface (ABI) machinery that the C++
 runtime would otherwise generate; both are independent of everything in
 Cluster B; neither overlaps with the other (different ABI surfaces).
 They are listed here as a pair because in the talk it is natural to
@@ -266,7 +488,8 @@ even when exceptions are off — `-fno-exceptions` only removes the
 *landing pads*, not the `.eh_frame` itself.
 
 **Trade-offs.** You cannot use any library that propagates exceptions
-across its API (parts of the STL, for example). Code calling `new` must
+across its application programming interface (API) — parts of the Standard
+Template Library (STL), for example. Code calling `new` must
 be ready to get a null pointer if combined with `-fno-exceptions` and
 `nothrow` new, or must use `operator new(std::nothrow)`.
 
@@ -289,8 +512,8 @@ polymorphic class type-info tables, and the helpers used by
 
 **Why it shrinks the binary.** Each polymorphic class normally drags in
 a `type_info` object plus a name string into `.rodata`. With many small
-polymorphic classes (or templates), this adds up quickly. Removing RTTI
-also breaks a hidden retention edge in the linker dead-code elimination
+polymorphic classes (or templates), this adds up quickly. Removing run-time
+type information (RTTI) also breaks a hidden retention edge in the linker dead-code elimination
 graph — once vtables no longer reference `type_info`, the linker can
 drop entire chains.
 
@@ -310,20 +533,52 @@ compiled the same way or carefully isolated.
 
 ---
 
-## Cluster D — Unwind metadata (the only genuinely redundant pair)
+## Cluster D — Unwind metadata (one flag does the work, one does nothing)
 
-The next two flags both disable DWARF call-frame information. The first
-is strictly stronger than the second on x86-64 Linux — async tables are
-the precise per-instruction form of sync tables, so they cannot exist
-without the sync ones. Disabling `-funwind-tables` necessarily disables
-the async variant too. Having both is **belt and suspenders**, not two
-separate savings.
+> **CORRECTED 2026-07-12 — I had this backwards.** An earlier version of
+> these notes claimed that `-fno-unwind-tables` is the stronger flag and
+> "strictly subsumes" `-fno-asynchronous-unwind-tables", and that either
+> flag alone removes both kinds of table. **That is wrong**, and the
+> measurement below shows it. It is the *asynchronous* flag that does all
+> the work; `-fno-unwind-tables` on its own is a **no-op** on x86-64 Linux.
+> Do not repeat the old claim on stage.
 
-It is still defensible to write both: it documents intent ("we know what
-both knobs are, and we want them off"), it is robust against
-target-default changes between toolchain versions, and it costs nothing.
-But in the talk this is the place to be honest: if you are counting
-flags, these two are really one.
+**What I measured** (clang-20, x86-64, `src/main_pro_plus.cpp`, all on top
+of `-Oz`; sizes are the `.eh_frame` section):
+
+| flags | `.eh_frame` | `.eh_frame_hdr` | `.gcc_except_table` |
+|-------|-------------|-----------------|---------------------|
+| *(neither)* | 0x398 | 0xd4 | 0x68 |
+| `-fno-unwind-tables` | **0x398 (unchanged!)** | 0xd4 | 0x68 |
+| `-fno-asynchronous-unwind-tables` | 0x2b8 | 0x84 | 0x68 |
+| both | 0x2b8 | 0x84 | 0x68 |
+| `-fno-exceptions` alone | 0x348 | 0xcc | **gone** |
+| `-fno-exceptions -fno-async…` | **0x48** | 0x1c | **gone** |
+
+Hex is what `readelf -SW` prints (handy for a live demo). In decimal, the
+`.eh_frame` column is **920 → 920 → 696 → 696 → 840 → 72 bytes** — the slide
+uses the decimals (920 / 696 / 72) for the headline three rows.
+
+**Why.** The x86-64 processor-specific ABI (psABI) *requires* asynchronous unwind tables, so clang's
+driver defaults to `-fasynchronous-unwind-tables` on this target. That
+default **implies** `-funwind-tables`. Passing `-fno-unwind-tables` does not
+switch off the asynchronous default, so the async setting simply turns the
+tables straight back on — the flag is silently overridden. Only
+`-fno-asynchronous-unwind-tables` clears the default, and *then* the sync
+tables go too.
+
+**The real lesson for the talk** (better than the old one): `.eh_frame` does
+not collapse until you turn off exceptions **and** async unwind tables
+*together* — 0x398 → 0x48, and the 0x48 that survives is not even your code,
+it is the C-runtime startup objects. Two flags, from two different clusters,
+that only pay off as a pair. That is a more interesting story than "these two
+are really one".
+
+**Keeping `-fno-unwind-tables` in the build is still defensible** — it
+documents intent and guards against target-default changes on other
+architectures (on ARM, for instance, the defaults differ). But be honest:
+on *this* target it buys exactly zero bytes. The leave-one-out table further
+down confirms it: removing it changes the binary by **0 B**.
 
 ### 10. `-fno-unwind-tables`
 
@@ -334,16 +589,19 @@ backtrace.
 
 **Why it shrinks the binary.** `.eh_frame` is *always* loaded at
 runtime (it lives in a `PT_LOAD` segment), so it counts toward on-disk
-size, RSS, and load time. On a release C++ binary it is frequently the
+size, resident set size (RSS), and load time. On a release C++ binary it is frequently the
 second-largest read-only section after `.rodata`.
 
-**Overlap.** Strictly subsumes `-fno-asynchronous-unwind-tables` (#11).
-See cluster intro.
+**Overlap.** ⚠️ **On x86-64 Linux this flag does nothing on its own.** It
+does *not* subsume `-fno-asynchronous-unwind-tables` (#11) — the reverse is
+true. The async default implies `-funwind-tables` and overrides this flag.
+Measured: removing it from the full tiny set changes the binary by 0 bytes.
+See the corrected cluster intro.
 
-**Trade-offs.** No usable `backtrace()` from the C runtime, profilers
-that rely on frame unwinding (perf with `--call-graph=dwarf`) will fail
-or fall back to frame-pointer walking. Useless if exceptions are still
-enabled — the compiler will re-emit the tables.
+**Trade-offs.** *If* it took effect: no usable `backtrace()` from the C
+runtime, and profilers that rely on frame unwinding (`perf --call-graph=dwarf`)
+fall back to frame-pointer walking. Also useless while exceptions are still
+enabled — the compiler re-emits the tables regardless.
 
 **Sources.**
 - Linux Standard Base, "Exception Frames":
@@ -365,15 +623,19 @@ trap, mid-prologue). On x86-64 Linux the ABI mandates them, so they are
 on by default even with `-fno-exceptions`.
 
 **Why it shrinks the binary.** Without async tables, the compiler can
-emit much sparser CFI directives — only at points where the unwind
+emit much sparser call-frame-information (CFI) directives — only at points where the unwind
 state actually changes for synchronous reasons.
 
-**Overlap.** **Redundant with `-fno-unwind-tables` (#10).** Async
-tables are a strict superset of sync tables; you cannot have async
-without sync. On x86-64 Linux this is actually the *minimum* flag of
-the pair, because the default is `-fasynchronous-unwind-tables`
-(implying `-funwind-tables`). Either flag alone removes both kinds of
-table. Keeping both is documentation, not savings.
+**Overlap.** ✅ **This is the flag that does the work.** Async tables are a
+strict superset of sync tables — you cannot have async without sync — and on
+x86-64 Linux the *default* is `-fasynchronous-unwind-tables` (which implies
+`-funwind-tables`). So this is the **only** flag of the pair that can clear
+the default. `-fno-unwind-tables` (#10) alone is a no-op. Measured cost of
+removing this flag from the tiny set: **+528 B** (terminal build), **+864 B**
+(FLTK build).
+
+Pairs with `-fno-exceptions` (#8): neither alone empties `.eh_frame`, but
+together they take it from 0x398 down to 0x48.
 
 **Trade-offs.** Signal handlers and debuggers cannot reliably
 reconstruct the stack from arbitrary instruction pointers. For a hosted
@@ -408,13 +670,15 @@ view. Worth a slide on its own — this distinction trips people up.
 **What it does.** Changes the default ELF symbol visibility from
 `default` (exported, interposable) to `hidden`. Symbols marked hidden
 are *not* placed in the dynamic symbol table of the resulting shared
-object or executable, and cross-DSO calls to them are impossible.
+object or executable, and cross-dynamic-shared-object (DSO) calls to them
+are impossible.
 
 **Why it shrinks the binary.** (a) Fewer entries in `.dynsym` /
 `.dynstr`. (b) The optimiser is free to inline hidden functions,
 devirtualise calls, and delete unused ones — because nothing outside
-the module can take their address. (c) Calls become direct PC-relative
-branches instead of going through the PLT/GOT.
+the module can take their address. (c) Calls become direct
+program-counter-relative (PC-relative) branches instead of going through the
+procedure linkage table / global offset table (PLT/GOT).
 
 **Overlap.** Often confused with `-Wl,-s` (#14). They affect *different*
 symbol tables: `.dynsym` (runtime, loaded) vs `.symtab` (debug,
@@ -494,7 +758,8 @@ for crash investigation in production.
 
 ## Cluster F — Assembler
 
-The pure-asm `_ultra` build is the only one that touches NASM. Nothing
+The pure-asm `_ultra` build is the only one that touches the Netwide
+Assembler (NASM). Nothing
 here overlaps with anything above (it operates on a different toolchain
 path entirely), but for completeness:
 
@@ -552,38 +817,229 @@ slide if you have one to spare.
 
 ---
 
+# Part 1.5 — Your flags stop at your code
+
+**This is the most important experiment in the talk, and it was added last.**
+
+`tiny_pomodoro` links `/usr/local/lib/libfltk.a` — a *pre-built* static archive.
+Someone (you, months ago) compiled it with `-O3`, exceptions on, RTTI on, no size
+flags at all, against **libstdc++**. The 15 flags in `CMakeLists.txt` are applied
+to exactly **one file**: `src/main.cpp`, ~350 lines. Meanwhile **3.3 MB of
+archive** — the thing that actually fills the binary — was compiled with none of
+them.
+
+`tiny_pomodoro_src` is the **same `main.cpp`**, but FLTK is compiled as part of
+our build (`add_subdirectory`), so our flags reach it.
+
+## The numbers (2026-07-12, clang-20)
+
+| build | binary | vs pre-built |
+|---|---:|---:|
+| pre-built FLTK, all tiny flags | 850,536 B | — |
+| FLTK from source, tiny flags **minus** `-flto=thin` | 419,464 B | **−51%** |
+| FLTK from source, **all** tiny flags | **327,552 B** | **−61%** |
+
+And the control that proves it is the *flags* doing the work, not the recompile:
+
+| build | pre-built | from source |
+|---|---:|---:|
+| **release** (`-O3`, no size flags) | 1,112,096 B | 1,115,616 B (**+0.3%**) |
+| **tiny** (all 15 flags) | 850,536 B | 327,552 B (**−61%**) |
+
+In `release` there are no size flags, so compiling FLTK ourselves buys **nothing**
+— it is marginally *bigger*. Building from source is not itself an optimisation.
+It is what gives the optimisations something to work on.
+
+## Decomposing the 523 KB
+
+1. **−431 KB — our flags now apply to FLTK's code.** `-Oz` instead of `-O3`,
+   `-fno-exceptions`, `-fno-rtti`, `-ffunction-sections` + `--gc-sections`,
+   `--icf=all` all now act on the *library*, not just on `main.cpp`. This is the
+   bulk of it, and it needs no LTO at all.
+2. **−92 KB more — LTO can now see inside.** With `-flto=thin`, FLTK's object
+   files are LLVM bitcode, so the optimiser inlines and DCEs *across the
+   app/library boundary*. Verify:
+   `file build/tiny/fltk_src/src/CMakeFiles/fltk.dir/Fl_Window.cxx.o`
+   → **`LLVM IR bitcode`**, where the pre-built archive's member is
+   → **`ELF 64-bit LSB relocatable`**.
+
+## The bonus: one C++ runtime instead of two
+
+The pre-built `libfltk.a` is a **libstdc++** build; the app is compiled
+`-stdlib=libc++`. CMake's link line passes `-lc++` but not `-stdlib=libc++`, so
+the driver *also* links its default libstdc++ — and `tiny_pomodoro` ends up
+needing **both** runtimes:
+
+```
+$ readelf -d build/tiny/tiny_pomodoro     | grep -Ei 'c\+\+|stdc'
+    libc++abi.so.1
+    libstdc++.so.6          ← two C++ runtimes in one process
+$ readelf -d build/tiny/tiny_pomodoro_src | grep -Ei 'c\+\+|stdc'
+    libc++.so.1
+    libc++abi.so.1          ← one
+```
+
+Compiling FLTK ourselves lets us build it with libc++ too, and the duplicate
+runtime disappears. (This also explains a link failure you will hit if you try it
+yourself: FLTK **must** get `-stdlib=libc++` in *every* build type, not just
+`Tiny` — it is an ABI decision, not an optimisation. Get it wrong and the release
+build dies with undefined `std::__throw_length_error` / `_Rb_tree_*` symbols,
+because FLTK's `std::string` and the app's `std::string` are different types.)
+
+## Trade-offs — say these out loud
+
+- **Build time.** FLTK takes minutes to compile; the pre-built archive is
+  instant. This is the real cost, and for most projects it is the right call to
+  pay the size and keep the fast build.
+- **`-fno-exceptions` / `-fno-rtti` on someone else's library** is a genuine risk.
+  FLTK 1.4 happens to compile cleanly with both (zero errors, zero warnings) —
+  I checked. Not every library will.
+- **You now own the library's build.** Upgrades, patches, platform quirks.
+
+## The line for the talk
+
+*"I spent a week on fifteen flags. They applied to one file. The other 3.3
+megabytes were compiled by someone else with none of them — and that someone else
+was me, six months ago."*
+
+---
+
+# Part 2 — Measured: what each flag is actually worth
+
+Everything above is what the flags are *supposed* to do. This is what they
+*did*, on this machine, on 2026-07-12, with clang-20.
+
+**Method — leave-one-out (ablation).** Build with the full tiny flag set, then
+rebuild removing exactly one flag, and record how much the binary *grows*. This
+attributes savings honestly and, unlike adding flags one at a time, does not
+depend on the order you list them in. (Removing `-Oz` falls back to `-O2`.)
+
+**Reproduce it live:** the script is trivial — a loop that drops one flag and
+runs `stat -c%s`. Worth doing on stage if you have the time.
+
+### Terminal build (`main_pro_plus.cpp`) — full tiny set = 9,968 B
+
+| flag removed | binary | cost of removing |
+|---|---:|---:|
+| `-Wl,-s` | 13,240 | **+3,272** |
+| `-fno-exceptions` | 11,096 | **+1,128** |
+| `-fno-asynchronous-unwind-tables` | 10,496 | +528 |
+| `-Oz` | 10,448 | +480 |
+| `-flto=thin` | 10,400 | +432 |
+| `-Wl,--as-needed` | 10,032 | +64 |
+| `-Wl,--gc-sections` | 9,992 | +24 |
+| `-ffunction-sections` | 9,968 | **0** |
+| `-fdata-sections` | 9,968 | **0** |
+| `-fno-rtti` | 9,968 | **0** |
+| `-fvisibility=hidden` | 9,968 | **0** |
+| `-fno-unwind-tables` | 9,968 | **0** |
+| `-fmerge-all-constants` | 9,968 | **0** |
+| `-Wl,--icf=all` | 9,968 | **0** |
+
+### FLTK build (`main.cpp`) — full tiny set = 850,536 B
+
+| flag removed | binary | cost of removing |
+|---|---:|---:|
+| `-Wl,-s` | 1,094,112 | **+243,576** |
+| `-Wl,--icf=all` | 858,744 | **+8,208** |
+| `-fno-exceptions` | 853,448 | +2,912 |
+| `-fno-asynchronous-unwind-tables` | 851,400 | +864 |
+| `-flto=thin` | 851,160 | +624 |
+| `-Wl,--as-needed` | 851,160 | +624 |
+| `-Oz` | 851,008 | +472 |
+| `-Wl,--gc-sections` | 850,808 | +272 |
+| the other six | 850,536 | **0** |
+
+### What this actually means — the honest slide
+
+1. **Stripping dominates everything.** `-Wl,-s` is 60% of the savings on the
+   terminal build and **96%** on the FLTK build. The largest single win in a
+   size-optimisation talk comes from deleting *symbol names* — data the kernel
+   never even loads. Nearly a quarter of a megabyte of `tiny_pomodoro` is
+   mangled C++ names.
+2. **Six of the fourteen flags move zero bytes** on *both* targets. They are
+   not useless in general — `-fno-rtti` needs polymorphism to bite,
+   `-fmerge-all-constants` needs duplicate constants, `-ffunction-sections`
+   only matters if `--gc-sections` has something to collect — this program just
+   does not give them anything to do.
+3. **The same flag is worth wildly different amounts on different programs.**
+   `--icf=all`: **0 B** on the terminal build, **8,208 B** on FLTK (templates
+   and thunks to fold). This is the argument for *measuring* rather than
+   cargo-culting a flag list.
+4. **`-ffunction-sections`/`-fdata-sections` show 0 because LTO got there
+   first.** Remove LTO *and* `--gc-sections` together and the picture changes.
+   Leave-one-out systematically *under*-credits redundant flags: if two flags
+   catch the same bytes, dropping either one alone looks free. Say this out
+   loud — it is the main weakness of the method, and someone will ask.
+
+**A good closing beat for the flags section:** *"Fifteen flags. On this
+program, six of them do nothing, and one of them — `strip` — is worth more than
+all the others combined."*
+
+---
+
 ## Background — FLTK and the cost of cross-platform abstractions
 
-**What FLTK is.** "Fast Light Toolkit" — a C++ GUI library originally
-written for SGI's IRIX in the mid-90s. The "fast and light" branding
+**What FLTK is.** "Fast Light Toolkit" (FLTK) — a C++ graphical user interface
+(GUI) library originally written for Silicon Graphics' (SGI) IRIX in the mid-90s. The "fast and light" branding
 made sense in that era (the alternative was Motif), but on modern
 Linux it sits on top of, and pulls in, a large stack of platform glue.
 
-**Why the FLTK pomodoro is ~830 KB even after `-Oz` + LTO + ICF +
-visibility + every other flag in the toolkit.** FLTK is portable, so it
-has to talk to whichever backend the host system provides. On modern
-Linux that means: X11 (the X server protocol), Cairo (vector drawing),
-Pango (text shaping), Harfbuzz (font shaping for Pango), GLib (GTK
-runtime), GTK3 (file-dialog widgets), Wayland (modern display protocol),
-XKBCommon (keyboard mapping for Wayland), DBus (system messaging),
-Fontconfig (font discovery), and ALSA (audio). Each one is a `-l<foo>`
-on the command line; each contributes code, dynamic linker entries, and
-static-initialiser overhead. Most of the size win from the 15 flags is
-consumed before `main()` runs.
+> **CORRECTED 2026-07-12 — FLTK is linked STATICALLY here, not dynamically.**
+> An earlier version of these notes said "FLTK arrives as a pre-built `.so`"
+> and that `--gc-sections` "cannot prune symbols inside `libfltk.so`". Both
+> are wrong. On this machine CMake resolves FLTK to
+> **`/usr/local/lib/libfltk.a`** — a *static archive*. Check it yourself:
+> `grep fltk build/tiny/CMakeFiles/tiny_pomodoro.dir/link.txt`. This changes
+> the whole explanation of why the binary is big, so the old wording must not
+> be used on stage.
 
-**Why the optimisations are less effective here.** `-flto=thin` cannot
-see into FLTK because FLTK arrives as a pre-built `.so`. `--gc-sections`
-can prune unused symbols in your *own* object files, but it cannot prune
-symbols inside `libfltk.so`. `--icf=all` only folds duplicates that
-reach the linker as input sections — anything resolved at runtime is
-out of reach. `--as-needed` *is* useful here: it drops `-lfltk` if
-nothing references it, but of course your code does reference it.
+**Why the FLTK pomodoro is ~830 KB.** Not because of dynamic-linking
+overhead — because **FLTK's own machine code is copied into the executable**.
+`libfltk.a` is a static archive, so the linker pulls in every archive member
+that anything references, and those members reference more members: the widget
+base classes, the event loop, the drawing layer, the font handling, the image
+decoders. That transitive closure *is* the 830 KB. The binary is big because
+it *contains* FLTK.
+
+**What the platform libraries actually cost (measured, and it surprised me).**
+The link line passes **38** libraries. The finished binary records only
+**13** `DT_NEEDED` entries. `--as-needed` drops every one of these:
+
+> gtk-3, gdk-3, pango-1.0, pangocairo-1.0, cairo, cairo-gobject, atk-1.0,
+> gdk_pixbuf-2.0, gio-2.0, gobject-2.0, glib-2.0, harfbuzz, wayland-client,
+> wayland-cursor, xkbcommon, dbus-1, Xext, z, dl, pthread
+
+So the GTK/Wayland/DBus stack that the old slide listed as a dependency of
+`tiny_pomodoro` **is not a dependency at all** — it is on the command line
+because CMake's `pkg_check_modules` puts it there, and the linker throws it
+away. Verify with `ldd build/tiny/tiny_pomodoro`. The size is FLTK's static
+code, not a pile of shared libraries.
+
+**A genuine wart worth mentioning.** `libfltk.a` was built against
+**libstdc++**, but the app compiles with `-stdlib=libc++`. The CMake link line
+passes `-lc++` but *not* `-stdlib=libc++`, so the driver also links its default
+libstdc++ — and the binary ends up with **two C++ runtimes**:
+`readelf -d build/tiny/tiny_pomodoro | grep -E 'c\+\+|stdc'` shows both
+`libc++abi.so.1` and `libstdc++.so.6`. It works, but it is an accident, and
+someone in the audience will spot it.
+
+**Why the optimisations behave differently here.** `-flto=thin` still cannot
+see into FLTK — not because it is a `.so`, but because the archive holds
+*native object code*, not LLVM bitcode. `--gc-sections` and `--icf=all`,
+however, absolutely *can* reach inside a static archive, and ICF earns its
+keep here: removing `--icf=all` costs **+8,208 B** on the FLTK build versus
+**0 B** on the terminal build, because FLTK's templates and thunks give it
+something to fold. `--gc-sections` adds surprisingly little on top (+272 B) —
+the linker's ordinary archive-member selection (pull only the `.o` members you
+need) has already done most of that job.
 
 **Trade-offs (for the talk).** FLTK is the right choice if you want a
 native-looking GUI, file dialogs, accessibility, and clipboard support
 without writing them yourself. It is the wrong choice if a small binary
 is the goal. The 830 KB figure is *already* heavily optimised; the
-unoptimised FLTK build is around 1.2 MB.
+unoptimised FLTK build is around 1.2 MB — and **unstripped it is 1,094 KB**,
+so a quarter of a megabyte of it is nothing but symbol names.
 
 **Sources.**
 - FLTK home page: <https://www.fltk.org/>
@@ -634,69 +1090,11 @@ for this talk.
 
 ## Background — The ELF page-alignment floor
 
-This is the discovery that the `tiny_pomodoro_2` experiment forced us
-to confront: even with every size flag enabled, a "do nothing"
-executable still occupies ~8 KB on disk. Worth a slide because the
-audience will assume the flags should keep delivering forever.
-
-**Where the floor comes from.** Linux loads an ELF executable by
-`mmap()`ing each `LOAD` program-header segment into the address space.
-`mmap()` operates at *page* granularity — 4 KiB on x86-64. Each segment
-needs its own page at minimum, because the loader sets memory
-protection per page: read-only for the ELF header segment, read+execute
-for `.text`, read-only for `.rodata`, read+write for `.data` / `.bss`.
-A static, no-libc binary therefore needs at least three `LOAD`
-segments (R, R+X, R) ⇒ at least three pages on disk ⇒ ~12 KB of
-virtual footprint, and ~8 KB of on-disk file size after the last
-page is trimmed.
-
-**Concrete breakdown for `tiny_pomodoro_2`** — 122 bytes of actual
-code, 8480 bytes on disk:
-
-| Region | Real content | File offset / size |
-|--------|--------------|--------------------|
-| ELF header + 3 program headers | 232 B | 0x0000–0x0fff (page 1) |
-| `.text` | 122 B | 0x1000–0x1fff (page 2) |
-| `.rodata` (one BEL byte) | 1 B | 0x2000–~0x201f (partial) |
-| Section headers + `.shstrtab` | ~64 B | end of file |
-
-The 15 flags have done all they can — there is no more `.text` to fold
-or GC. From this point, **shrinking the binary is no longer a compiler
-problem; it is an ELF problem.**
-
-**Confirming the floor empirically.** Compare `_ultra` (3046 B of
-`.text`) with `_2` (122 B of `.text`): on disk they are 8992 B and
-8480 B respectively. **25× more code, 6% bigger file.** Once your real
-content fits inside one 4 KiB page, adding more code is essentially
-free until you spill the next page.
-
-**How to go below the floor.**
-
-1. **Reduce `LOAD` segments.** Merge `.rodata` into the same segment
-   as `.text` (`R+X` protection — slightly less safe, but the kernel
-   doesn't care for this small a binary). Brings the file down to two
-   pages, then one. Requires a custom linker script; not exposed via
-   any standard flag.
-2. **Overlap headers.** The ELF header has reserved/padding fields;
-   the program-header table can be placed inside them. The linker
-   won't do this; `objcopy` and hand-tools can.
-3. **Hand-rolled ELF.** Brian Raiter's *Teensy ELF* gets to **45
-   bytes** by abandoning every section, overlapping header fields,
-   and using the `e_ident` padding as instructions. The result is
-   unstrippable, ungdbable, and unportable across kernel versions —
-   but it runs.
-
-**The takeaway line for the talk.** *"The 15 flags get you to the page
-floor. Below that, you're not optimising — you're hand-crafting ELF,
-and that is a different talk."*
-
-**Tools to investigate the floor on stage.**
-- `readelf -lW <bin>` — shows LOAD segments and their alignment
-  (`Align 0x1000` is the smoking gun).
-- `readelf -SW <bin>` — sections, sizes, and offsets.
-- `size <bin>` — `.text` / `.data` / `.bss` summary, easy to live-demo.
-- `bloaty <bin>` — per-section / per-symbol attribution; great for the
-  "where did the bytes go" slide.
+→ **Moved.** The full treatment now lives in **Part 0, "The ELF file format"**
+(sections vs segments, why protection forces separate pages, the
+page-occupancy table for `tiny_pomodoro_2`, the two orthogonal axes, and how
+to go below the floor). It was rewritten there with corrected numbers; do not
+rehearse from two copies. Only the sources are kept here.
 
 **Sources.**
 - ELF specification, "Program Header" section:

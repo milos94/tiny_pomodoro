@@ -5,7 +5,7 @@
 set -euo pipefail
 
 BUILDS=(debug release debugasan debugubsan tiny)
-BINS=(tiny_pomodoro tiny_pomodoro_pro tiny_pomodoro_pro_plus tiny_pomodoro_pro_plus_ultra tiny_pomodoro_2)
+BINS=(tiny_pomodoro tiny_pomodoro_src tiny_pomodoro_pro tiny_pomodoro_pro_plus tiny_pomodoro_pro_plus_ultra tiny_pomodoro_2)
 BUILD_DIR="$(dirname "$0")/build"
 
 # Column widths
