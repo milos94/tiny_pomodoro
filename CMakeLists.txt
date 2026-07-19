@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_CXX_COMPILER "/usr/bin/clang++-20")
+set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
 # FLTK compiles C sources too; they must go through clang as well, or -flto=thin
 # is handed to gcc, which does not understand it.
-set(CMAKE_C_COMPILER "/usr/bin/clang-20")
+set(CMAKE_C_COMPILER "/usr/bin/clang")
 
 project(tiny_pomodoro C CXX)
 
